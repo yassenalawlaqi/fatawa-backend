@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: fatawa_api_prod
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://fatawa_user:fatawa_password@postgres:5432/fatawa_db?schema=public
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  postgres:
+    image: postgres:15
+    container_name: fatawa_postgres_prod
+    environment:
+      POSTGRES_USER: fatawa_user
+      POSTGRES_PASSWORD: fatawa_password
+      POSTGRES_DB: fatawa_db
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: fatawa_redis_prod
+    volumes:
+      - redis_data_prod:/data
+    restart: always
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:

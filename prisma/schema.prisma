@@ -1,0 +1,207 @@
+generator client {
+  provider        = "prisma-client-js"
+  engineType      = "library"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuidOssp(map: "uuid-ossp")]
+}
+
+model Scholar {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  fatawa Fatwa[]
+
+  @@map("scholars")
+}
+
+model Category {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  fatawa Fatwa[]
+
+  @@map("categories")
+}
+
+model Source {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name         String
+  slug         String   @unique
+  type         String
+  officialUrl  String?  @map("official_url")
+  licenseNotes String?  @map("license_notes")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  fatawa Fatwa[]
+
+  @@map("sources")
+}
+
+model Fatwa {
+  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  slug               String    @unique
+  scholarId          String    @map("scholar_id") @db.Uuid
+  categoryId         String    @map("category_id") @db.Uuid
+  sourceId           String    @map("source_id") @db.Uuid
+  question           String
+  answer             String
+  sourceBook         String?   @map("source_book")
+  volume             String?
+  page               String?
+  officialUrl        String?   @map("official_url")
+  sourceFingerprint  String    @unique @map("source_fingerprint")
+  publishedAt        DateTime? @map("published_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  verificationStatus String    @default("pending") @map("verification_status") // verified, pending, archived
+  verifiedAt         DateTime? @map("verified_at")
+  verifiedBy         String?   @map("verified_by") 
+  syncStatus         String    @default("active") @map("sync_status") // active, stale
+
+  scholar  Scholar  @relation(fields: [scholarId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+  source   Source   @relation(fields: [sourceId], references: [id])
+
+  revisions   FatwaRevision[]
+  attachments Attachment[]
+  keywords    FatwaKeyword[]
+  searchIndex SearchIndex?
+
+  @@index([scholarId])
+  @@index([categoryId])
+  @@index([sourceId])
+  @@index([verificationStatus])
+  @@map("fatawa")
+}
+
+model SearchIndex {
+  fatwaId        String   @id @map("fatwa_id") @db.Uuid
+  normalizedText String   @map("normalized_text")
+  searchVector   Unsupported("tsvector")? @map("search_vector")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  fatwa Fatwa @relation(fields: [fatwaId], references: [id], onDelete: Cascade)
+
+  @@index([searchVector], type: Gin)
+  @@map("search_index")
+}
+
+model FatwaRevision {
+  id             String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  fatwaId        String   @map("fatwa_id") @db.Uuid
+  revisionNumber Int      @map("revision_number")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  fatwa Fatwa @relation(fields: [fatwaId], references: [id])
+
+  @@map("fatwa_revisions")
+}
+
+model Attachment {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  fatwaId   String   @map("fatwa_id") @db.Uuid
+  type      String   // pdf, image, audio
+  fileUrl   String   @map("file_url")
+  title     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  fatwa Fatwa @relation(fields: [fatwaId], references: [id])
+
+  @@map("attachments")
+}
+
+model Keyword {
+  id   String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  word String @unique
+
+  fatawa FatwaKeyword[]
+
+  @@map("keywords")
+}
+
+model FatwaKeyword {
+  id        String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  fatwaId   String @map("fatwa_id") @db.Uuid
+  keywordId String @map("keyword_id") @db.Uuid
+
+  fatwa   Fatwa   @relation(fields: [fatwaId], references: [id])
+  keyword Keyword @relation(fields: [keywordId], references: [id])
+
+  @@unique([fatwaId, keywordId])
+  @@map("fatwa_keywords")
+}
+
+model Synonym {
+  id      String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  word    String
+  synonym String
+
+  @@unique([word, synonym])
+  @@map("synonyms")
+}
+
+model SearchLog {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  query        String
+  resultsCount Int      @map("results_count")
+  executionMs  Int      @map("execution_ms")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("search_logs")
+}
+
+model ImportJob {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  source          String
+  startedAt       DateTime @default(now()) @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+  duration        Int?
+  status          String   // running, success, failed
+  importedCount   Int      @default(0) @map("imported_count")
+  updatedCount    Int      @default(0) @map("updated_count")
+  skippedCount    Int      @default(0) @map("skipped_count")
+  failedCount     Int      @default(0) @map("failed_count")
+  errorMessage    String?  @map("error_message")
+
+  @@map("import_jobs")
+}
+
+model SyncStatus {
+  source          String   @id
+  lastSync        DateTime? @map("last_sync")
+  nextSync        DateTime? @map("next_sync")
+  status          String   // idle, running, error
+  lastError       String?  @map("last_error")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("sync_status")
+}
+
+model AuditLog {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  action    String
+  entity    String
+  entityId  String   @map("entity_id") @db.Uuid
+  details   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+model SystemMetadata {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_metadata")
+}
