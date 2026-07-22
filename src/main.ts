@@ -7,9 +7,25 @@ const compression = require('compression');
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { setupSwagger } from './config/swagger.config';
+import { execSync } from 'child_process';
+import { PrismaClient } from '@prisma/client';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // Auto-seed if empty
+  try {
+    const prisma = new PrismaClient();
+    const count = await prisma.fatwa.count();
+    if (count === 0) {
+      console.log('Database is empty. Auto-injecting Fatawa...');
+      execSync('node dist/prisma/seed.js', { stdio: 'inherit' });
+      execSync('node dist/prisma/import-real-fatawa.js', { stdio: 'inherit' });
+      console.log('Fatawa injected successfully.');
+    }
+  } catch (e) {
+    console.log('Skipping auto-seed due to error:', e);
+  }
 
   // Logger
   app.useLogger(app.get(Logger));
