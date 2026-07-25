@@ -7,25 +7,14 @@ const compression = require('compression');
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { setupSwagger } from './config/swagger.config';
-import { execSync } from 'child_process';
-import { PrismaClient } from '@prisma/client';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
-  // Auto-seed if empty
-  try {
-    const prisma = new PrismaClient();
-    const count = await prisma.fatwa.count();
-    if (count === 0) {
-      console.log('Database is empty. Auto-injecting Fatawa...');
-      execSync('node dist/prisma/seed.js', { stdio: 'inherit' });
-      execSync('node dist/prisma/import-real-fatawa.js', { stdio: 'inherit' });
-      console.log('Fatawa injected successfully.');
-    }
-  } catch (e) {
-    console.log('Skipping auto-seed due to error:', e);
-  }
+  app.use((req: any, res: any, next: any) => {
+    console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
+    next();
+  });
 
   // Logger
   app.useLogger(app.get(Logger));
@@ -59,8 +48,19 @@ async function bootstrap() {
   setupSwagger(app);
 
   const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0');
-  console.log(`Application is running on: http://0.0.0.0:${port}`);
-  console.log(`Swagger Docs available at: http://0.0.0.0:${port}/api/docs`);
+  
+  process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED REJECTION]');
+    console.error(reason);
+  });
+
+  process.on('uncaughtException', (err) => {
+    console.error('[UNCAUGHT EXCEPTION]');
+    console.error(err);
+  });
+
+  await app.listen(port);
+  console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`Swagger Docs available at: http://localhost:${port}/api/docs`);
 }
 bootstrap();
