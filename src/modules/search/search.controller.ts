@@ -21,15 +21,26 @@ export class SearchController {
     this.logger.log(`Page: ${query.page}`);
     this.logger.log(`Limit: ${query.limit}`);
     
+    console.log("REQUEST RECEIVED");
+    console.time("SearchRequest");
+
     try {
       const result = await this.searchService.search(query);
+      
+      console.log("RESPONSE SENT");
+      console.timeEnd("SearchRequest");
+      
       this.logger.log(`==== Search Finished ====\n`);
       return result;
-    } catch (e) {
-      this.logger.error(`Exception Name: ${e.name}`);
-      this.logger.error(`Message: ${e.message}`);
-      this.logger.error(`Stack: ${e.stack}`);
-      throw e;
+    } catch (error: any) {
+      console.error(error);
+      console.error(error.stack);
+      
+      this.logger.error(`Exception Name: ${error.name}`);
+      this.logger.error(`Message: ${error.message}`);
+      this.logger.error(`Stack: ${error.stack}`);
+      console.timeEnd("SearchRequest");
+      throw error;
     }
   }
 
