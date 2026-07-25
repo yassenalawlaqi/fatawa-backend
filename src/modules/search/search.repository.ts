@@ -20,26 +20,37 @@ export class SearchRepository {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Orchestrator search method: tries FTS, falls back to Prisma Contains on failure or 0 results.
-   */
   async search(query: string, page: number = 1, limit: number = 20): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
+    console.log("ENTER SearchRepository");
     this.logger.log('Repository Started');
     try {
-      // 1. Try FTS First
+      console.log("BEFORE Prisma");
+      console.time("Prisma");
+      
       const ftsResult = await this.searchFTS(query, page, limit);
+      
+      console.timeEnd("Prisma");
+      console.log("AFTER Prisma");
+
       if (ftsResult.total > 0) {
         return { ...ftsResult, engine: 'fts' };
       }
-      // FTS returned 0 results, try fallback
+      
       this.logger.log('FTS returned 0 results, trying fallback...');
+      console.log("BEFORE FALLBACK");
+      
       const fallbackResult = await this.searchFallback(query, page, limit);
+      
+      console.log("AFTER FALLBACK");
       return { ...fallbackResult, engine: fallbackResult.total > 0 ? 'fallback' : 'fts' };
-    } catch (error) {
+    } catch (error: any) {
       this.logger.warn(`FTS query failed, falling back to basic search: ${error.message}`);
       
-      // 2. Fallback to Prisma
+      console.log("BEFORE FALLBACK");
+      
       const fallbackResult = await this.searchFallback(query, page, limit);
+      
+      console.log("AFTER FALLBACK");
       return { ...fallbackResult, engine: 'fallback' };
     }
   }
@@ -48,7 +59,6 @@ export class SearchRepository {
     this.logger.log('FTS Query Started');
     const offset = (page - 1) * limit;
 
-    // Use plainto_tsquery for natural language search without syntax errors
     const rawQuery = Prisma.sql`
       SELECT 
         f.id, f.slug, f.question, f.answer, 
@@ -82,7 +92,6 @@ export class SearchRepository {
     this.logger.log(`typeof countResult[0]?.total: ${typeof countResult[0]?.total}`);
     const total = Number(countResult[0]?.total || 0);
     
-    // Convert to proper structure
     const mappedData = data.map(item => ({
       ...item,
       questionTitle: item.question.substring(0, 80) + '...',
@@ -94,7 +103,6 @@ export class SearchRepository {
   async searchFallback(query: string, page: number, limit: number): Promise<{ data: SearchResult[], total: number }> {
     const terms = query.split(' ').filter(t => t.length > 1);
     
-    // If no specific terms, return empty (safeguard)
     if (terms.length === 0) {
       return { data: [], total: 0 };
     }
@@ -120,17 +128,14 @@ export class SearchRepository {
         take: 50 
       });
 
-      // Score and Rank manually
       const scoredData = rawData.map(fatwa => {
       let score = 0;
       const lowerQuery = query.toLowerCase();
 
-      // Precise matches
       if (fatwa.question?.toLowerCase().includes(lowerQuery)) score += 100;
       if (fatwa.scholar?.name?.toLowerCase().includes(lowerQuery)) score += 70;
       if (fatwa.category?.name?.toLowerCase().includes(lowerQuery)) score += 50;
 
-      // Term-based scoring
       terms.forEach(term => {
         const lowerTerm = term.toLowerCase();
         if (fatwa.question?.toLowerCase().includes(lowerTerm)) score += 40;
@@ -157,7 +162,7 @@ export class SearchRepository {
       const paginatedData = scoredData.slice(offset, offset + limit);
 
       return { data: paginatedData, total };
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error(`Exception Name: ${e.name}`);
       this.logger.error(`Message: ${e.message}`);
       this.logger.error(`Stack: ${e.stack}`);
@@ -166,8 +171,6 @@ export class SearchRepository {
   }
 
   async autocomplete(q: string) {
-    // Search in question, keywords, scholar, category
-    // Limit to 10
     const rawData = await this.prisma.fatwa.findMany({
       where: {
         verificationStatus: 'verified',
@@ -184,7 +187,6 @@ export class SearchRepository {
     const suggestions = new Set<string>();
     
     rawData.forEach(f => {
-      // Very basic autocomplete suggestion building
       if (f.question.toLowerCase().includes(q.toLowerCase())) {
         suggestions.add(f.question.substring(0, 50));
       } else if (f.scholar.name.toLowerCase().includes(q.toLowerCase())) {
@@ -204,18 +206,14 @@ export class SearchRepository {
           query,
           resultsCount,
           executionMs,
-          // We could add engine if added to Schema. Let's just put it in a non-schema way or skip if schema lacks it.
-          // schema has: id, query, results_count, execution_ms, created_at. No 'engine' column. 
-          // Since schema lacks it, I will skip engine to avoid crashing, unless I alter DB.
         }
       });
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error(`Failed to log search: ${e.message}`);
     }
   }
 
   async getTrendingSearches() {
-    // 30 days window
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -251,7 +249,7 @@ export class SearchRepository {
         SET search_vector = to_tsvector('arabic', normalized_text);
       `);
       this.logger.log('Search Index rebuilt successfully.');
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`Failed to rebuild search index: ${error.message}`);
     }
   }
