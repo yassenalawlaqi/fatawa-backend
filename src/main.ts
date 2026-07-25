@@ -9,7 +9,11 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
+  console.log("STEP 1: Before NestFactory.create");
+
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  console.log("STEP 2: After NestFactory.create");
 
   app.use((req: any, res: any, next: any) => {
     console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
@@ -47,8 +51,10 @@ async function bootstrap() {
   // Swagger
   setupSwagger(app);
 
+  console.log("STEP 3: Before app.listen");
+
   const port = process.env.PORT || 3000;
-  
+
   process.on('unhandledRejection', (reason) => {
     console.error('[UNHANDLED REJECTION]');
     console.error(reason);
@@ -60,7 +66,7 @@ async function bootstrap() {
   });
 
   await app.listen(port);
-  console.log(`Application is running on: http://localhost:${port}`);
+  console.log(`STEP 4: Application is running on: http://localhost:${port}`);
   console.log(`Swagger Docs available at: http://localhost:${port}/api/docs`);
 }
 bootstrap();
