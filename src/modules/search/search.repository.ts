@@ -21,36 +21,20 @@ export class SearchRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async search(query: string, page: number = 1, limit: number = 20): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
-    console.log("ENTER SearchRepository");
+    console.log("[Repository] search()");
     this.logger.log('Repository Started');
     try {
-      console.log("BEFORE Prisma");
-      console.time("Prisma");
-      
       const ftsResult = await this.searchFTS(query, page, limit);
-      
-      console.timeEnd("Prisma");
-      console.log("AFTER Prisma");
-
       if (ftsResult.total > 0) {
         return { ...ftsResult, engine: 'fts' };
       }
-      
       this.logger.log('FTS returned 0 results, trying fallback...');
-      console.log("BEFORE FALLBACK");
-      
       const fallbackResult = await this.searchFallback(query, page, limit);
-      
-      console.log("AFTER FALLBACK");
       return { ...fallbackResult, engine: fallbackResult.total > 0 ? 'fallback' : 'fts' };
     } catch (error: any) {
       this.logger.warn(`FTS query failed, falling back to basic search: ${error.message}`);
       
-      console.log("BEFORE FALLBACK");
-      
       const fallbackResult = await this.searchFallback(query, page, limit);
-      
-      console.log("AFTER FALLBACK");
       return { ...fallbackResult, engine: 'fallback' };
     }
   }
@@ -92,7 +76,7 @@ export class SearchRepository {
     this.logger.log(`typeof countResult[0]?.total: ${typeof countResult[0]?.total}`);
     const total = Number(countResult[0]?.total || 0);
     
-    const mappedData = data.map(item => ({
+    const mappedData = data.map((item: any) => ({
       ...item,
       questionTitle: item.question.substring(0, 80) + '...',
     }));
