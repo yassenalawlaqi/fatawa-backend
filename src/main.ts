@@ -9,6 +9,7 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { setupSwagger } from './config/swagger.config';
 
 async function bootstrap() {
+  console.log("=== BOOTSTRAP STARTED ===");
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   // Logger
@@ -44,6 +45,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
+  console.log("=== SERVER LISTENING ===");
   console.log(`Application is running on: http://localhost:${port}`);
   console.log(`Swagger Docs available at: http://localhost:${port}/api/docs`);
 }

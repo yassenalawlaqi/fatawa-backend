@@ -16,6 +16,7 @@ export class SearchController {
   @ApiOperation({ summary: 'Search fatawa (GET)' })
   @ApiResponse({ status: 200, description: 'Successful search response.' })
   async searchGet(@Query() query: SearchQueryDto) {
+    console.log("[Controller] searchGet entered");
     this.logger.log(`\n==== Search Started ====`);
     this.logger.log(`Query: ${query.query || query.q}`);
     this.logger.log(`Page: ${query.page}`);

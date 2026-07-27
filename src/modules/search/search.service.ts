@@ -15,20 +15,18 @@ export class SearchService implements ISearchProvider {
   ) {}
 
   async search(queryDto: SearchQueryDto): Promise<{ success: boolean; message?: string; data: any[]; pagination: { page: number; limit: number; total: number; totalPages: number; }; meta?: any; }> {
+    console.log("[Service] search()");
     const { scholar, category, limit = 20 } = queryDto;
     const page = Math.max(1, parseInt(queryDto.page as any, 10) || 1);
     const query = queryDto.query || queryDto.q || queryDto.keyword || queryDto.search || '';
     
     this.logger.log('Service Layer Started');
-    // Calculate total execution time
     const startTime = Date.now();
     let isCacheHit = false;
 
-    // Cache Key
     const cacheKey = `search:${query}:${page}:${limit}`;
 
     try {
-      // 1. Try Cache
       try {
         const cachedResult = await this.cacheManager.get(cacheKey);
         if (cachedResult) {
@@ -36,17 +34,14 @@ export class SearchService implements ISearchProvider {
           const executionMs = Date.now() - startTime;
           this.logger.debug(`Cache Hit for query [${query}] in ${executionMs}ms`);
           
-          // Async log
           this.searchRepository.logSearch(query, cachedResult['total'] || 0, executionMs, 'cache').catch(e => this.logger.error(e));
           
           return cachedResult as any;
         }
       } catch (cacheError) {
-        // Safe Catch: If Redis/Memory fails, we proceed without cache.
         this.logger.warn(`Cache retrieval failed, proceeding to DB: ${cacheError.message}`);
       }
 
-      // 2. Fetch from DB via Repository
       const result = await this.searchRepository.search(query, parseInt(page as any, 10), parseInt(limit as any, 10));
       
       const executionMs = Date.now() - startTime;
@@ -70,11 +65,9 @@ export class SearchService implements ISearchProvider {
         }
       };
 
-      // 3. Set Cache (Fire & Forget)
-      this.cacheManager.set(cacheKey, { ...response, meta: { ...response.meta, cached: true } }, 21600000) // 6 hours
+      this.cacheManager.set(cacheKey, { ...response, meta: { ...response.meta, cached: true } }, 21600000) 
         .catch(e => this.logger.warn(`Failed to set cache: ${e.message}`));
 
-      // 4. Log Search (Fire & Forget)
       this.searchRepository.logSearch(query, result.total, executionMs, result.engine)
         .catch(e => this.logger.error(e));
 
@@ -118,7 +111,7 @@ export class SearchService implements ISearchProvider {
     const result = { trending };
 
     try {
-      await this.cacheManager.set(cacheKey, result, 600000); // 10 minutes
+      await this.cacheManager.set(cacheKey, result, 600000); 
     } catch(e) {}
 
     return result;
