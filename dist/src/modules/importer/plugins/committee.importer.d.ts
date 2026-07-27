@@ -12,6 +12,5 @@ export declare class PermanentCommitteeImporter extends BaseImporterService {
     fetchRawItems(): Promise<any[]>;
     extractFatwaData(rawItem: {
         url: string;
-        html: string;
     }): Promise<FatwaData>;
 }

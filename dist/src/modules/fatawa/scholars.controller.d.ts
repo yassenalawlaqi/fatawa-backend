@@ -9,8 +9,8 @@ export declare class ScholarsController {
     } & {
         id: string;
         slug: string;
-        createdAt: Date;
         name: string;
         description: string | null;
+        createdAt: Date;
     })[]>;
 }

@@ -70,8 +70,8 @@ export class ImporterService implements OnModuleInit {
       JSON.stringify(result)
     );
 
-    // Rebuild Search Index after individual import
-    await this.searchRepository.rebuildSearchIndex();
+    // Note: Rebuild Search Index is now handled automatically in BaseImporterService
+    // via Smart Sync (Phase 2), so we no longer drop the full table here.
 
     return result;
   }

@@ -18,59 +18,78 @@ export class BinBazImporter extends BaseImporterService {
   }
 
   async fetchRawItems(): Promise<any[]> {
-    this.logger.log(`Fetching listing page for ${this.sourceName}...`);
-    // Attempting to use the extractor on the index page
+    this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
+    const allLinks: Set<string> = new Set();
+    let currentPage = 1;
+    let hasMorePages = true;
+
+    while (hasMorePages) {
+      this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
+      try {
+        const html = await this.extractor.extractContent([
+          {
+            type: 'html',
+            url: `${this.officialUrl}/fatwas/kind/1?page=${currentPage}`,
+            extractFn: async (data) => data,
+          }
+        ]);
+
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html);
+        
+        const pageLinks: string[] = [];
+        $('article.fatwa a').each((_, el) => {
+          const href = $(el).attr('href');
+          if (href && href.includes('/fatwas/')) {
+            pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+          }
+        });
+
+        if (pageLinks.length === 0) {
+          hasMorePages = false;
+        } else {
+          pageLinks.forEach(link => allLinks.add(link));
+          currentPage++;
+          // Optional: slight delay to avoid hammering the server aggressively
+          await new Promise(res => setTimeout(res, 500));
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to fetch page ${currentPage}: ${err.message}`);
+        hasMorePages = false; // Stop on error
+      }
+    }
+
+    this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
+    
+    // Return objects with just the URL, to save memory. HTML will be fetched per item.
+    return Array.from(allLinks).map(url => ({ url }));
+  }
+
+  async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {
+    // 1. Fetch HTML dynamically here to avoid OOM
     const html = await this.extractor.extractContent([
       {
         type: 'html',
-        url: `${this.officialUrl}/fatwas`,
-        extractFn: async (data) => data,
+        url: rawItem.url,
+        extractFn: async (d) => d
       }
     ]);
 
+    // 2. Relying on ContentExtractorService utility for HTML
+    const extracted = this.extractor.extractHtml(html, 'h1.article-title, h1, h2.article-title__question', '.article-content, article');
+    
+    // The question in binbaz is usually in h2.article-title__question, let's refine parsing:
     const cheerio = require('cheerio');
     const $ = cheerio.load(html);
-    
-    const links: string[] = [];
-    $('article a').each((_, el) => {
-      const href = $(el).attr('href');
-      if (href && href.includes('/fatwas/')) {
-        links.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
-      }
-    });
+    const questionText = $('.article-title__question').text().trim() || extracted.question;
+    const answerText = $('.article-content').text().trim() || extracted.answer;
 
-    const uniqueLinks = [...new Set(links)];
-    const targetLinks = uniqueLinks.slice(0, 5); // PoC limit
-    
-    const rawItems: { url: string; html: any }[] = [];
-    for (const link of targetLinks) {
-      try {
-        const itemHtml = await this.extractor.extractContent([
-          {
-            type: 'html',
-            url: link,
-            extractFn: async (d) => d
-          }
-        ]);
-        rawItems.push({ url: link, html: itemHtml });
-      } catch (err) {
-        this.logger.warn(`Failed to fetch detail for ${link}`);
-      }
-    }
-
-    return rawItems;
-  }
-
-  async extractFatwaData(rawItem: { url: string; html: string }): Promise<FatwaData> {
-    // Relying on ContentExtractorService utility for HTML
-    const extracted = this.extractor.extractHtml(rawItem.html, 'h1.article-title, h1', '.article-content, article');
-    
-    if (!extracted.question || !extracted.answer) {
-      throw new Error('Parsing failed for question or answer');
+    if (!questionText || !answerText) {
+      throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
     }
 
     // Media extraction
-    const attachments = this.extractor.extractAttachments(rawItem.html, this.officialUrl);
+    const attachments = this.extractor.extractAttachments(html, this.officialUrl);
 
     const urlParts = rawItem.url.split('/');
     const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
@@ -83,21 +102,21 @@ export class BinBazImporter extends BaseImporterService {
     });
 
     // Default Category (Fallback)
+    const categoryName = $('.categories__item').first().text().trim() || 'فتاوى عامة';
+    const categorySlug = categoryName === 'فتاوى عامة' ? 'general' : categoryName.replace(/\\s+/g, '-');
     const category = await this.prisma.category.upsert({
-      where: { slug: 'general' },
+      where: { slug: categorySlug },
       update: {},
-      create: { name: 'فتاوى عامة', slug: 'general' }
+      create: { name: categoryName, slug: categorySlug }
     });
 
-    const cheerio = require('cheerio');
-    const $ = cheerio.load(rawItem.html);
     const dateText = $('.article-date').text() || '';
     const publishedAt = dateText ? new Date(dateText) : new Date();
 
     return {
       slug: `binbaz-${fatwaId}`,
-      question: extracted.question,
-      answer: extracted.answer,
+      question: questionText,
+      answer: answerText,
       url: rawItem.url,
       scholarId: scholar.id,
       categoryId: category.id,

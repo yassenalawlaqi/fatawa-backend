@@ -75,7 +75,6 @@ let ImporterService = ImporterService_1 = class ImporterService {
         this.logger.log(`Executing import pipeline for ${plugin.sourceName}...`);
         const result = await plugin.runImportPipeline();
         await this.auditService.logAction('RUN_IMPORT', 'ImportLog', '00000000-0000-0000-0000-000000000000', JSON.stringify(result));
-        await this.searchRepository.rebuildSearchIndex();
         return result;
     }
     async handleCron() {

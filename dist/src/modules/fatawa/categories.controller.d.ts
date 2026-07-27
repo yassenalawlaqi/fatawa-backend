@@ -5,7 +5,7 @@ export declare class CategoriesController {
     getCategories(): Promise<{
         id: string;
         slug: string;
-        createdAt: Date;
         name: string;
+        createdAt: Date;
     }[]>;
 }

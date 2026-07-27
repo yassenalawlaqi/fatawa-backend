@@ -26,49 +26,70 @@ let FawzanImporter = class FawzanImporter extends base_importer_service_1.BaseIm
         this.extractor = extractor;
     }
     async fetchRawItems() {
-        this.logger.log(`Fetching listing page for ${this.sourceName}...`);
+        this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
+        const allLinks = new Set();
+        let currentPage = 0;
+        let hasMorePages = true;
+        while (hasMorePages) {
+            this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
+            try {
+                const html = await this.extractor.extractContent([
+                    {
+                        type: 'html',
+                        url: `${this.officialUrl}/ar/fatwas?page=${currentPage}`,
+                        extractFn: async (data) => data,
+                    }
+                ]);
+                const cheerio = require('cheerio');
+                const $ = cheerio.load(html);
+                const pageLinks = [];
+                $('a').each((_, el) => {
+                    const href = $(el).attr('href');
+                    if (href && href.includes('/node/')) {
+                        pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+                    }
+                });
+                if (pageLinks.length === 0) {
+                    hasMorePages = false;
+                }
+                else {
+                    let addedNew = false;
+                    pageLinks.forEach(link => {
+                        if (!allLinks.has(link)) {
+                            allLinks.add(link);
+                            addedNew = true;
+                        }
+                    });
+                    if (!addedNew) {
+                        hasMorePages = false;
+                    }
+                    else {
+                        currentPage++;
+                        await new Promise(res => setTimeout(res, 500));
+                    }
+                }
+            }
+            catch (err) {
+                this.logger.warn(`Failed to fetch page ${currentPage}: ${err.message}`);
+                hasMorePages = false;
+            }
+        }
+        this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
+        return Array.from(allLinks).map(url => ({ url }));
+    }
+    async extractFatwaData(rawItem) {
         const html = await this.extractor.extractContent([
             {
                 type: 'html',
-                url: `${this.officialUrl}/ar/fatwas`,
-                extractFn: async (data) => data,
+                url: rawItem.url,
+                extractFn: async (d) => d
             }
         ]);
-        const cheerio = require('cheerio');
-        const $ = cheerio.load(html);
-        const links = [];
-        $('a').each((_, el) => {
-            const href = $(el).attr('href');
-            if (href && href.includes('/node/')) {
-                links.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
-            }
-        });
-        const uniqueLinks = [...new Set(links)];
-        const targetLinks = uniqueLinks.slice(0, 5);
-        const rawItems = [];
-        for (const link of targetLinks) {
-            try {
-                const itemHtml = await this.extractor.extractContent([
-                    {
-                        type: 'html',
-                        url: link,
-                        extractFn: async (d) => d
-                    }
-                ]);
-                rawItems.push({ url: link, html: itemHtml });
-            }
-            catch (err) {
-                this.logger.warn(`Failed to fetch detail for ${link}`);
-            }
-        }
-        return rawItems;
-    }
-    async extractFatwaData(rawItem) {
-        const extracted = this.extractor.extractHtml(rawItem.html, 'h1.page-header', '.field-name-body, .content');
+        const extracted = this.extractor.extractHtml(html, 'h1.page-header', '.field-name-body, .content');
         if (!extracted.question || !extracted.answer) {
-            throw new Error('Parsing failed for question or answer');
+            throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
         }
-        const attachments = this.extractor.extractAttachments(rawItem.html, this.officialUrl);
+        const attachments = this.extractor.extractAttachments(html, this.officialUrl);
         const urlParts = rawItem.url.split('/');
         const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
         const scholar = await this.prisma.scholar.upsert({
@@ -76,10 +97,14 @@ let FawzanImporter = class FawzanImporter extends base_importer_service_1.BaseIm
             update: {},
             create: { name: 'صالح بن فوزان الفوزان', slug: 'fawzan' }
         });
+        const cheerio = require('cheerio');
+        const $ = cheerio.load(html);
+        const categoryName = $('.field-name-field-category a').first().text().trim() || 'فتاوى عامة';
+        const categorySlug = categoryName === 'فتاوى عامة' ? 'general' : categoryName.replace(/\\s+/g, '-');
         const category = await this.prisma.category.upsert({
-            where: { slug: 'general' },
+            where: { slug: categorySlug },
             update: {},
-            create: { name: 'فتاوى عامة', slug: 'general' }
+            create: { name: categoryName, slug: categorySlug }
         });
         return {
             slug: `fawzan-${fatwaId}`,

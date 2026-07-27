@@ -26,49 +26,70 @@ let PermanentCommitteeImporter = class PermanentCommitteeImporter extends base_i
         this.extractor = extractor;
     }
     async fetchRawItems() {
-        this.logger.log(`Fetching listing page for ${this.sourceName}...`);
+        this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
+        const allLinks = new Set();
+        let currentPage = 1;
+        let hasMorePages = true;
+        while (hasMorePages) {
+            this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
+            try {
+                const html = await this.extractor.extractContent([
+                    {
+                        type: 'html',
+                        url: `${this.officialUrl}/Ar/IftaPages/default.aspx?page=${currentPage}`,
+                        extractFn: async (data) => data,
+                    }
+                ]);
+                const cheerio = require('cheerio');
+                const $ = cheerio.load(html);
+                const pageLinks = [];
+                $('a').each((_, el) => {
+                    const href = $(el).attr('href');
+                    if (href && href.includes('Fatwa')) {
+                        pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+                    }
+                });
+                if (pageLinks.length === 0) {
+                    hasMorePages = false;
+                }
+                else {
+                    let addedNew = false;
+                    pageLinks.forEach(link => {
+                        if (!allLinks.has(link)) {
+                            allLinks.add(link);
+                            addedNew = true;
+                        }
+                    });
+                    if (!addedNew) {
+                        hasMorePages = false;
+                    }
+                    else {
+                        currentPage++;
+                        await new Promise(res => setTimeout(res, 500));
+                    }
+                }
+            }
+            catch (err) {
+                this.logger.warn(`Failed to fetch page ${currentPage}: ${err.message}`);
+                hasMorePages = false;
+            }
+        }
+        this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
+        return Array.from(allLinks).map(url => ({ url }));
+    }
+    async extractFatwaData(rawItem) {
         const html = await this.extractor.extractContent([
             {
                 type: 'html',
-                url: `${this.officialUrl}/Ar/IftaPages/default.aspx`,
-                extractFn: async (data) => data,
+                url: rawItem.url,
+                extractFn: async (d) => d
             }
         ]);
-        const cheerio = require('cheerio');
-        const $ = cheerio.load(html);
-        const links = [];
-        $('a').each((_, el) => {
-            const href = $(el).attr('href');
-            if (href && href.includes('Fatwa')) {
-                links.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
-            }
-        });
-        const uniqueLinks = [...new Set(links)];
-        const targetLinks = uniqueLinks.slice(0, 5);
-        const rawItems = [];
-        for (const link of targetLinks) {
-            try {
-                const itemHtml = await this.extractor.extractContent([
-                    {
-                        type: 'html',
-                        url: link,
-                        extractFn: async (d) => d
-                    }
-                ]);
-                rawItems.push({ url: link, html: itemHtml });
-            }
-            catch (err) {
-                this.logger.warn(`Failed to fetch detail for ${link}`);
-            }
-        }
-        return rawItems;
-    }
-    async extractFatwaData(rawItem) {
-        const extracted = this.extractor.extractHtml(rawItem.html, '.fatwa-title, h1, h2', '.fatwa-body, .content');
+        const extracted = this.extractor.extractHtml(html, '.fatwa-title, h1, h2', '.fatwa-body, .content');
         if (!extracted.question || !extracted.answer) {
-            throw new Error('Parsing failed for question or answer');
+            throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
         }
-        const attachments = this.extractor.extractAttachments(rawItem.html, this.officialUrl);
+        const attachments = this.extractor.extractAttachments(html, this.officialUrl);
         const urlParts = rawItem.url.split('/');
         const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
         const scholar = await this.prisma.scholar.upsert({

@@ -142,6 +142,29 @@ class BaseImporterService {
             const executionTime = Date.now() - startTime;
             const finalStatus = metrics.failed === rawItems.length && rawItems.length > 0 ? 'failed' : 'success';
             this.logger.log(`[END] Import complete for ${this.sourceName}. Time: ${executionTime}ms. Imported: ${metrics.imported}, Updated: ${metrics.updated}, Skipped: ${metrics.skipped}, Failed: ${metrics.failed}, Duplicated: ${metrics.duplicated}`);
+            if (metrics.imported > 0 || metrics.updated > 0) {
+                this.logger.log(`Updating Search Index for ${this.sourceName}...`);
+                try {
+                    await this.prisma.$executeRawUnsafe(`
+            INSERT INTO search_index (fatwa_id, normalized_text, updated_at)
+            SELECT id, question || ' ' || answer, NOW()
+            FROM fatawa
+            WHERE source_id = '${source.id}'
+            ON CONFLICT (fatwa_id) DO UPDATE SET 
+              normalized_text = EXCLUDED.normalized_text,
+              updated_at = NOW();
+          `);
+                    await this.prisma.$executeRawUnsafe(`
+            UPDATE search_index
+            SET search_vector = to_tsvector('arabic', normalized_text)
+            WHERE fatwa_id IN (SELECT id FROM fatawa WHERE source_id = '${source.id}');
+          `);
+                    this.logger.log(`Search Index updated successfully for ${this.sourceName}.`);
+                }
+                catch (searchError) {
+                    this.logger.error(`Failed to update Search Index for ${this.sourceName}: ${searchError.message}`);
+                }
+            }
             await this.prisma.importJob.create({
                 data: {
                     source: this.sourceSlug,

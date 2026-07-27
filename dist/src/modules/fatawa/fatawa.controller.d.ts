@@ -7,45 +7,45 @@ export declare class FatawaController {
             scholar: {
                 id: string;
                 slug: string;
-                createdAt: Date;
                 name: string;
                 description: string | null;
+                createdAt: Date;
             };
             category: {
                 id: string;
                 slug: string;
-                createdAt: Date;
                 name: string;
+                createdAt: Date;
             };
             source: {
                 id: string;
                 slug: string;
-                officialUrl: string | null;
-                createdAt: Date;
                 name: string;
+                createdAt: Date;
                 type: string;
+                officialUrl: string | null;
                 licenseNotes: string | null;
             };
         } & {
-            syncStatus: string;
-            answer: string;
-            question: string;
             id: string;
             slug: string;
+            createdAt: Date;
+            officialUrl: string | null;
+            sourceFingerprint: string;
             scholarId: string;
             categoryId: string;
             sourceId: string;
+            question: string;
+            answer: string;
             sourceBook: string | null;
             volume: string | null;
             page: string | null;
-            officialUrl: string | null;
-            sourceFingerprint: string;
             publishedAt: Date | null;
-            createdAt: Date;
             updatedAt: Date;
             verificationStatus: string;
             verifiedAt: Date | null;
             verifiedBy: string | null;
+            syncStatus: string;
         })[];
         pagination: {
             page: number;
@@ -58,23 +58,23 @@ export declare class FatawaController {
         scholar: {
             id: string;
             slug: string;
-            createdAt: Date;
             name: string;
             description: string | null;
+            createdAt: Date;
         };
         category: {
             id: string;
             slug: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
         };
         source: {
             id: string;
             slug: string;
-            officialUrl: string | null;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
             type: string;
+            officialUrl: string | null;
             licenseNotes: string | null;
         };
         attachments: {
@@ -82,63 +82,63 @@ export declare class FatawaController {
             createdAt: Date;
             type: string;
             title: string | null;
-            fileUrl: string;
             fatwaId: string;
+            fileUrl: string;
         }[];
     } & {
-        syncStatus: string;
-        answer: string;
-        question: string;
         id: string;
         slug: string;
+        createdAt: Date;
+        officialUrl: string | null;
+        sourceFingerprint: string;
         scholarId: string;
         categoryId: string;
         sourceId: string;
+        question: string;
+        answer: string;
         sourceBook: string | null;
         volume: string | null;
         page: string | null;
-        officialUrl: string | null;
-        sourceFingerprint: string;
         publishedAt: Date | null;
-        createdAt: Date;
         updatedAt: Date;
         verificationStatus: string;
         verifiedAt: Date | null;
         verifiedBy: string | null;
+        syncStatus: string;
     }>;
     getRelated(slug: string): Promise<({
         scholar: {
             id: string;
             slug: string;
-            createdAt: Date;
             name: string;
             description: string | null;
+            createdAt: Date;
         };
         category: {
             id: string;
             slug: string;
-            createdAt: Date;
             name: string;
+            createdAt: Date;
         };
     } & {
-        syncStatus: string;
-        answer: string;
-        question: string;
         id: string;
         slug: string;
+        createdAt: Date;
+        officialUrl: string | null;
+        sourceFingerprint: string;
         scholarId: string;
         categoryId: string;
         sourceId: string;
+        question: string;
+        answer: string;
         sourceBook: string | null;
         volume: string | null;
         page: string | null;
-        officialUrl: string | null;
-        sourceFingerprint: string;
         publishedAt: Date | null;
-        createdAt: Date;
         updatedAt: Date;
         verificationStatus: string;
         verifiedAt: Date | null;
         verifiedBy: string | null;
+        syncStatus: string;
     })[]>;
 }
