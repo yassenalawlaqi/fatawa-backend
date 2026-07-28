@@ -47,7 +47,7 @@ export class SynonymService {
     const words = query.split(/\s+/).filter(w => w.length > 2);
     if (words.length === 0) return '';
 
-    const parts = [];
+    const parts: string[] = [];
     for (const word of words) {
       const expandedWords = await this.expandQuery(word);
       if (expandedWords.length > 1) {
