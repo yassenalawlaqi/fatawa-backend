@@ -39,9 +39,11 @@ const fatwa_validator_util_1 = require("../utils/fatwa-validator.util");
 const crypto = __importStar(require("crypto"));
 class BaseImporterService {
     prisma;
+    keywordExtractor;
     logger = new common_1.Logger(this.constructor.name);
-    constructor(prisma) {
+    constructor(prisma, keywordExtractor) {
         this.prisma = prisma;
+        this.keywordExtractor = keywordExtractor;
     }
     calculateFingerprint(officialUrl, question, answer) {
         const hash = crypto.createHash('sha256');
@@ -109,12 +111,34 @@ class BaseImporterService {
                                         updatedAt: new Date(),
                                     }
                                 });
+                                await tx.fatwaKeyword.deleteMany({ where: { fatwaId: existingFatwa.id } });
+                                try {
+                                    const category = await tx.category.findUnique({ where: { id: extractedData.categoryId } });
+                                    const keywords = await this.keywordExtractor.extractKeywords({
+                                        question: extractedData.question,
+                                        answer: extractedData.answer,
+                                        categoryName: category?.name
+                                    });
+                                    for (const kw of keywords) {
+                                        const kwDb = await tx.keyword.upsert({
+                                            where: { word: kw },
+                                            update: {},
+                                            create: { word: kw }
+                                        });
+                                        await tx.fatwaKeyword.create({
+                                            data: { fatwaId: existingFatwa.id, keywordId: kwDb.id }
+                                        });
+                                    }
+                                }
+                                catch (kwErr) {
+                                    this.logger.warn(`Failed to update keywords for ${existingFatwa.slug}: ${kwErr.message}`);
+                                }
                             });
                             metrics.updated++;
                         }
                     }
                     else {
-                        await this.prisma.fatwa.create({
+                        const newFatwa = await this.prisma.fatwa.create({
                             data: {
                                 slug: extractedData.slug,
                                 question: extractedData.question,
@@ -131,6 +155,29 @@ class BaseImporterService {
                                 }
                             }
                         });
+                        try {
+                            const category = await this.prisma.category.findUnique({ where: { id: extractedData.categoryId } });
+                            const keywords = await this.keywordExtractor.extractKeywords({
+                                question: extractedData.question,
+                                answer: extractedData.answer,
+                                categoryName: category?.name
+                            });
+                            for (const kw of keywords) {
+                                const kwDb = await this.prisma.keyword.upsert({
+                                    where: { word: kw },
+                                    update: {},
+                                    create: { word: kw }
+                                });
+                                await this.prisma.fatwaKeyword.upsert({
+                                    where: { fatwaId_keywordId: { fatwaId: newFatwa.id, keywordId: kwDb.id } },
+                                    update: {},
+                                    create: { fatwaId: newFatwa.id, keywordId: kwDb.id }
+                                });
+                            }
+                        }
+                        catch (kwErr) {
+                            this.logger.warn(`Failed to extract keywords for ${newFatwa.slug}: ${kwErr.message}`);
+                        }
                         metrics.imported++;
                     }
                 }
@@ -147,17 +194,28 @@ class BaseImporterService {
                 try {
                     await this.prisma.$executeRawUnsafe(`
             INSERT INTO search_index (fatwa_id, normalized_text, updated_at)
-            SELECT id, question || ' ' || answer, NOW()
-            FROM fatawa
-            WHERE source_id = '${source.id}'
+            SELECT 
+              f.id, 
+              concat_ws(' ', f.question, f.answer, s.name, c.name), 
+              NOW()
+            FROM fatawa f
+            LEFT JOIN scholars s ON f.scholar_id = s.id
+            LEFT JOIN categories c ON f.category_id = c.id
+            WHERE f.source_id = '${source.id}'
             ON CONFLICT (fatwa_id) DO UPDATE SET 
               normalized_text = EXCLUDED.normalized_text,
               updated_at = NOW();
           `);
                     await this.prisma.$executeRawUnsafe(`
-            UPDATE search_index
-            SET search_vector = to_tsvector('arabic', normalized_text)
-            WHERE fatwa_id IN (SELECT id FROM fatawa WHERE source_id = '${source.id}');
+            UPDATE search_index si
+            SET search_vector = 
+              setweight(to_tsvector('arabic', coalesce(f.question, '') || ' ' || coalesce((SELECT string_agg(k.word, ' ') FROM fatwa_keywords fk JOIN keywords k ON fk.keyword_id = k.id WHERE fk.fatwa_id = f.id), '')), 'A') ||
+              setweight(to_tsvector('arabic', coalesce(s.name, '') || ' ' || coalesce(c.name, '')), 'B') ||
+              setweight(to_tsvector('arabic', coalesce(f.answer, '')), 'C')
+            FROM fatawa f
+            LEFT JOIN scholars s ON f.scholar_id = s.id
+            LEFT JOIN categories c ON f.category_id = c.id
+            WHERE f.id = si.fatwa_id AND f.source_id = '${source.id}';
           `);
                     this.logger.log(`Search Index updated successfully for ${this.sourceName}.`);
                 }

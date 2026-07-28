@@ -15,6 +15,7 @@ export declare class FatawaRepository {
             slug: string;
             name: string;
             createdAt: Date;
+            parentId: string | null;
         };
         source: {
             id: string;
@@ -33,6 +34,16 @@ export declare class FatawaRepository {
             fatwaId: string;
             fileUrl: string;
         }[];
+        keywords: ({
+            keyword: {
+                id: string;
+                word: string;
+            };
+        } & {
+            id: string;
+            fatwaId: string;
+            keywordId: string;
+        })[];
     } & {
         id: string;
         slug: string;
@@ -47,6 +58,7 @@ export declare class FatawaRepository {
         sourceBook: string | null;
         volume: string | null;
         page: string | null;
+        viewCount: number;
         publishedAt: Date | null;
         updatedAt: Date;
         verificationStatus: string;
@@ -54,41 +66,7 @@ export declare class FatawaRepository {
         verifiedBy: string | null;
         syncStatus: string;
     }) | null>;
-    findRelated(slug: string, limit?: number): Promise<({
-        scholar: {
-            id: string;
-            slug: string;
-            name: string;
-            description: string | null;
-            createdAt: Date;
-        };
-        category: {
-            id: string;
-            slug: string;
-            name: string;
-            createdAt: Date;
-        };
-    } & {
-        id: string;
-        slug: string;
-        createdAt: Date;
-        officialUrl: string | null;
-        sourceFingerprint: string;
-        scholarId: string;
-        categoryId: string;
-        sourceId: string;
-        question: string;
-        answer: string;
-        sourceBook: string | null;
-        volume: string | null;
-        page: string | null;
-        publishedAt: Date | null;
-        updatedAt: Date;
-        verificationStatus: string;
-        verifiedAt: Date | null;
-        verifiedBy: string | null;
-        syncStatus: string;
-    })[]>;
+    findRelated(slug: string, limit?: number): Promise<any[]>;
     findByScholar(scholarSlug: string | null, scholarId: string | null, page?: number, limit?: number): Promise<{
         data: ({
             scholar: {
@@ -103,6 +81,7 @@ export declare class FatawaRepository {
                 slug: string;
                 name: string;
                 createdAt: Date;
+                parentId: string | null;
             };
             source: {
                 id: string;
@@ -127,6 +106,7 @@ export declare class FatawaRepository {
             sourceBook: string | null;
             volume: string | null;
             page: string | null;
+            viewCount: number;
             publishedAt: Date | null;
             updatedAt: Date;
             verificationStatus: string;
@@ -150,10 +130,5 @@ export declare class FatawaRepository {
         description: string | null;
         createdAt: Date;
     })[]>;
-    getCategories(): Promise<{
-        id: string;
-        slug: string;
-        name: string;
-        createdAt: Date;
-    }[]>;
+    getCategories(): Promise<any[]>;
 }

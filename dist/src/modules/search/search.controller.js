@@ -26,6 +26,7 @@ let SearchController = SearchController_1 = class SearchController {
     }
     logger = new common_1.Logger(SearchController_1.name);
     async searchGet(query) {
+        console.log("[Controller] searchGet entered");
         this.logger.log(`\n==== Search Started ====`);
         this.logger.log(`Query: ${query.query || query.q}`);
         this.logger.log(`Page: ${query.page}`);
@@ -50,6 +51,10 @@ let SearchController = SearchController_1 = class SearchController {
     }
     async trending() {
         return this.searchService.getTrendingSearches();
+    }
+    async getSynonyms() {
+        const synonyms = await this.searchService.getAllSynonyms();
+        return { success: true, data: synonyms };
     }
 };
 exports.SearchController = SearchController;
@@ -88,6 +93,14 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)
 ], SearchController.prototype, "trending", null);
+__decorate([
+    (0, common_1.Get)('synonyms'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all synonyms (Read-Only)' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Returns list of synonyms' }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SearchController.prototype, "getSynonyms", null);
 exports.SearchController = SearchController = SearchController_1 = __decorate([
     (0, swagger_1.ApiTags)('Search'),
     (0, common_1.Controller)({ path: 'public/search', version: '1' }),

@@ -13,6 +13,8 @@ const search_controller_1 = require("./search.controller");
 const search_service_1 = require("./search.service");
 const search_repository_1 = require("./search.repository");
 const prisma_module_1 = require("../prisma/prisma.module");
+const synonym_service_1 = require("./synonym.service");
+const keyword_extractor_service_1 = require("./keyword-extractor.service");
 let SearchModule = class SearchModule {
 };
 exports.SearchModule = SearchModule;
@@ -51,12 +53,14 @@ exports.SearchModule = SearchModule = __decorate([
         providers: [
             search_repository_1.SearchRepository,
             search_service_1.SearchService,
+            synonym_service_1.SynonymService,
+            keyword_extractor_service_1.KeywordExtractorService,
             {
                 provide: 'ISearchProvider',
                 useExisting: search_service_1.SearchService,
             },
         ],
-        exports: ['ISearchProvider', search_repository_1.SearchRepository],
+        exports: ['ISearchProvider', search_repository_1.SearchRepository, synonym_service_1.SynonymService, keyword_extractor_service_1.KeywordExtractorService],
     })
 ], SearchModule);
 //# sourceMappingURL=search.module.js.map

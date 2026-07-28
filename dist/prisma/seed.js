@@ -2,11 +2,15 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const client_1 = require("@prisma/client");
 const prisma = new client_1.PrismaClient();
+const categories_seed_1 = require("./seeds/categories.seed");
+const synonyms_seed_1 = require("./seeds/synonyms.seed");
 async function main() {
     console.log('Seeding database...');
     await prisma.fatwa.deleteMany({});
     await prisma.searchLog.deleteMany({});
     await prisma.importJob.deleteMany({});
+    await prisma.category.deleteMany({});
+    await prisma.synonym.deleteMany({});
     await prisma.systemMetadata.upsert({
         where: { key: 'database_version' },
         update: {},
@@ -21,17 +25,8 @@ async function main() {
     for (const s of scholars) {
         await prisma.scholar.upsert({ where: { slug: s.slug }, update: {}, create: s });
     }
-    const categories = [
-        'العقيدة', 'الطهارة', 'الصلاة', 'الزكاة', 'الصيام', 'الحج والعمرة', 'المعاملات', 'فتاوى عامة'
-    ];
-    const categorySlugs = ['aqeedah', 'taharah', 'salat', 'zakat', 'siyam', 'hajj', 'muamalat', 'general'];
-    for (let i = 0; i < categories.length; i++) {
-        await prisma.category.upsert({
-            where: { slug: categorySlugs[i] },
-            update: {},
-            create: { name: categories[i], slug: categorySlugs[i] }
-        });
-    }
+    await (0, categories_seed_1.seedCategories)(prisma);
+    await (0, synonyms_seed_1.seedSynonyms)(prisma);
     const sources = [
         { slug: 'binbaz-official', name: 'الموقع الرسمي للإمام ابن باز', type: 'official_website', officialUrl: 'https://binbaz.org.sa' },
         { slug: 'uthaymeen-official', name: 'الموقع الرسمي للشيخ ابن عثيمين', type: 'official_website', officialUrl: 'https://binothaimeen.net' },

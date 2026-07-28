@@ -13,6 +13,7 @@ const all_exceptions_filter_1 = require("./common/filters/all-exceptions.filter"
 const transform_interceptor_1 = require("./common/interceptors/transform.interceptor");
 const swagger_config_1 = require("./config/swagger.config");
 async function bootstrap() {
+    console.log("=== BOOTSTRAP STARTED ===");
     const app = await core_1.NestFactory.create(app_module_1.AppModule, { bufferLogs: true });
     app.useLogger(app.get(nestjs_pino_1.Logger));
     app.use((0, helmet_1.default)());
@@ -33,6 +34,7 @@ async function bootstrap() {
     (0, swagger_config_1.setupSwagger)(app);
     const port = process.env.PORT || 3000;
     await app.listen(port);
+    console.log("=== SERVER LISTENING ===");
     console.log(`Application is running on: http://localhost:${port}`);
     console.log(`Swagger Docs available at: http://localhost:${port}/api/docs`);
 }

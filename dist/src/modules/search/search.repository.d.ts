@@ -1,4 +1,5 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { SynonymService } from './synonym.service';
 export interface SearchResult {
     id: string;
     slug: string;
@@ -12,8 +13,9 @@ export interface SearchResult {
 }
 export declare class SearchRepository {
     private readonly prisma;
+    private readonly synonymService;
     private readonly logger;
-    constructor(prisma: PrismaService);
+    constructor(prisma: PrismaService, synonymService: SynonymService);
     search(query: string, page?: number, limit?: number): Promise<{
         data: SearchResult[];
         total: number;
@@ -33,4 +35,10 @@ export declare class SearchRepository {
     logSearch(query: string, resultsCount: number, executionMs: number, engine: string): Promise<void>;
     getTrendingSearches(): Promise<string[]>;
     rebuildSearchIndex(): Promise<void>;
+    rebuildSearchIndexForSource(sourceId: string): Promise<void>;
+    getAllSynonyms(): Promise<{
+        id: string;
+        word: string;
+        synonym: string;
+    }[]>;
 }

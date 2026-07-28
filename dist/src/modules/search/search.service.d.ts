@@ -21,4 +21,9 @@ export declare class SearchService implements ISearchProvider {
     }>;
     autocomplete(q: string): Promise<{}>;
     getTrendingSearches(): Promise<{}>;
+    getAllSynonyms(): Promise<{
+        id: string;
+        word: string;
+        synonym: string;
+    }[]>;
 }

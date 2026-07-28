@@ -26,6 +26,7 @@ let SearchService = SearchService_1 = class SearchService {
         this.cacheManager = cacheManager;
     }
     async search(queryDto) {
+        console.log("[Service] search()");
         const { scholar, category, limit = 20 } = queryDto;
         const page = Math.max(1, parseInt(queryDto.page, 10) || 1);
         const query = queryDto.query || queryDto.q || queryDto.keyword || queryDto.search || '';
@@ -113,6 +114,9 @@ let SearchService = SearchService_1 = class SearchService {
         }
         catch (e) { }
         return result;
+    }
+    async getAllSynonyms() {
+        return this.searchRepository.getAllSynonyms();
     }
 };
 exports.SearchService = SearchService;

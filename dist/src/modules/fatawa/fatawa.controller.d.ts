@@ -16,6 +16,7 @@ export declare class FatawaController {
                 slug: string;
                 name: string;
                 createdAt: Date;
+                parentId: string | null;
             };
             source: {
                 id: string;
@@ -40,6 +41,7 @@ export declare class FatawaController {
             sourceBook: string | null;
             volume: string | null;
             page: string | null;
+            viewCount: number;
             publishedAt: Date | null;
             updatedAt: Date;
             verificationStatus: string;
@@ -67,6 +69,7 @@ export declare class FatawaController {
             slug: string;
             name: string;
             createdAt: Date;
+            parentId: string | null;
         };
         source: {
             id: string;
@@ -85,6 +88,16 @@ export declare class FatawaController {
             fatwaId: string;
             fileUrl: string;
         }[];
+        keywords: ({
+            keyword: {
+                id: string;
+                word: string;
+            };
+        } & {
+            id: string;
+            fatwaId: string;
+            keywordId: string;
+        })[];
     } & {
         id: string;
         slug: string;
@@ -99,6 +112,7 @@ export declare class FatawaController {
         sourceBook: string | null;
         volume: string | null;
         page: string | null;
+        viewCount: number;
         publishedAt: Date | null;
         updatedAt: Date;
         verificationStatus: string;
@@ -106,39 +120,5 @@ export declare class FatawaController {
         verifiedBy: string | null;
         syncStatus: string;
     }>;
-    getRelated(slug: string): Promise<({
-        scholar: {
-            id: string;
-            slug: string;
-            name: string;
-            description: string | null;
-            createdAt: Date;
-        };
-        category: {
-            id: string;
-            slug: string;
-            name: string;
-            createdAt: Date;
-        };
-    } & {
-        id: string;
-        slug: string;
-        createdAt: Date;
-        officialUrl: string | null;
-        sourceFingerprint: string;
-        scholarId: string;
-        categoryId: string;
-        sourceId: string;
-        question: string;
-        answer: string;
-        sourceBook: string | null;
-        volume: string | null;
-        page: string | null;
-        publishedAt: Date | null;
-        updatedAt: Date;
-        verificationStatus: string;
-        verifiedAt: Date | null;
-        verifiedBy: string | null;
-        syncStatus: string;
-    })[]>;
+    getRelated(slug: string): Promise<any[]>;
 }

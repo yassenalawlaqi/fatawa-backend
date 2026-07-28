@@ -14,16 +14,19 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
 const base_importer_service_1 = require("../services/base-importer.service");
 const content_extractor_service_1 = require("../services/content-extractor.service");
+const keyword_extractor_service_1 = require("../../search/keyword-extractor.service");
 let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.BaseImporterService {
     prisma;
     extractor;
+    keywordExtractor;
     sourceName = 'موقع الشيخ محمد بن صالح العثيمين';
     sourceSlug = 'uthaymeen-official';
     officialUrl = 'https://binothaimeen.net';
-    constructor(prisma, extractor) {
-        super(prisma);
+    constructor(prisma, extractor, keywordExtractor) {
+        super(prisma, keywordExtractor);
         this.prisma = prisma;
         this.extractor = extractor;
+        this.keywordExtractor = keywordExtractor;
     }
     async fetchRawItems() {
         this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
@@ -118,6 +121,7 @@ exports.UthaymeenImporter = UthaymeenImporter;
 exports.UthaymeenImporter = UthaymeenImporter = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        content_extractor_service_1.ContentExtractorService])
+        content_extractor_service_1.ContentExtractorService,
+        keyword_extractor_service_1.KeywordExtractorService])
 ], UthaymeenImporter);
 //# sourceMappingURL=uthaymeen.importer.js.map

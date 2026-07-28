@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { BaseImporterService } from '../services/base-importer.service';
 import { ContentExtractorService } from '../services/content-extractor.service';
 import { FatwaData } from '../interfaces/i-importer.interface';
-
+import { KeywordExtractorService } from '../../search/keyword-extractor.service';
 @Injectable()
 export class BinBazImporter extends BaseImporterService {
   readonly sourceName = 'الموقع الرسمي للإمام ابن باز';
@@ -12,9 +12,10 @@ export class BinBazImporter extends BaseImporterService {
 
   constructor(
     protected readonly prisma: PrismaService,
-    private readonly extractor: ContentExtractorService
+    private readonly extractor: ContentExtractorService,
+    protected readonly keywordExtractor: KeywordExtractorService
   ) {
-    super(prisma);
+    super(prisma, keywordExtractor);
   }
 
   async fetchRawItems(): Promise<any[]> {

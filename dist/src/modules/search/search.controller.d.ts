@@ -30,4 +30,12 @@ export declare class SearchController {
     }>;
     autocomplete(q: string): Promise<{}>;
     trending(): Promise<{}>;
+    getSynonyms(): Promise<{
+        success: boolean;
+        data: {
+            id: string;
+            word: string;
+            synonym: string;
+        }[];
+    }>;
 }

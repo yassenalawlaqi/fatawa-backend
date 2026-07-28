@@ -19,29 +19,53 @@ let FatawaRepository = class FatawaRepository {
     }
     async findBySlug(slugOrId) {
         const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugOrId);
-        return this.prisma.fatwa.findFirst({
-            where: isUuid ? { id: slugOrId } : { slug: slugOrId },
+        const where = isUuid ? { id: slugOrId } : { slug: slugOrId };
+        const fatwa = await this.prisma.fatwa.findFirst({
+            where,
             include: {
                 scholar: true,
                 category: true,
                 source: true,
-                attachments: true
+                attachments: true,
+                keywords: {
+                    include: { keyword: true }
+                }
             }
         });
+        if (fatwa) {
+            await this.prisma.fatwa.update({
+                where: { id: fatwa.id },
+                data: { viewCount: { increment: 1 } }
+            });
+        }
+        return fatwa;
     }
     async findRelated(slug, limit = 5) {
-        return this.prisma.fatwa.findMany({
-            where: {
-                slug: { not: slug },
-                verificationStatus: 'verified'
-            },
-            take: limit,
-            include: {
-                scholar: true,
-                category: true,
-            },
-            orderBy: { publishedAt: 'desc' }
-        });
+        const baseFatwa = await this.findBySlug(slug);
+        if (!baseFatwa)
+            return [];
+        const keywordIds = baseFatwa.keywords.map(k => `'${k.keywordId}'`);
+        const kwFilter = keywordIds.length > 0
+            ? `(SELECT COALESCE(COUNT(*), 0) * 10 FROM fatwa_keywords fk WHERE fk.fatwa_id = f.id AND fk.keyword_id IN (${keywordIds.join(',')}))`
+            : `0`;
+        const rawQuery = `
+      SELECT 
+        f.id, f.slug, f.question, 
+        s.name as scholar, c.name as category,
+        (
+          (CASE WHEN f.category_id = '${baseFatwa.categoryId}' THEN 30 ELSE 0 END) +
+          (CASE WHEN f.scholar_id = '${baseFatwa.scholarId}' THEN 20 ELSE 0 END) +
+          ${kwFilter}
+        ) as score
+      FROM fatawa f
+      JOIN scholars s ON f.scholar_id = s.id
+      JOIN categories c ON f.category_id = c.id
+      WHERE f.id != '${baseFatwa.id}' AND f.verification_status = 'verified'
+      ORDER BY score DESC, f.published_at DESC
+      LIMIT ${limit}
+    `;
+        const related = await this.prisma.$queryRawUnsafe(rawQuery);
+        return related;
     }
     async findByScholar(scholarSlug, scholarId, page = 1, limit = 20) {
         const skip = (page - 1) * limit;
@@ -73,9 +97,27 @@ let FatawaRepository = class FatawaRepository {
         });
     }
     async getCategories() {
-        return this.prisma.category.findMany({
+        const categories = await this.prisma.category.findMany({
             orderBy: { name: 'asc' }
         });
+        const categoryMap = new Map();
+        categories.forEach(c => categoryMap.set(c.id, { ...c, children: [] }));
+        const rootCategories = [];
+        categories.forEach(c => {
+            if (c.parentId) {
+                const parent = categoryMap.get(c.parentId);
+                if (parent) {
+                    parent.children.push(categoryMap.get(c.id));
+                }
+                else {
+                    rootCategories.push(categoryMap.get(c.id));
+                }
+            }
+            else {
+                rootCategories.push(categoryMap.get(c.id));
+            }
+        });
+        return rootCategories;
     }
 };
 exports.FatawaRepository = FatawaRepository;
