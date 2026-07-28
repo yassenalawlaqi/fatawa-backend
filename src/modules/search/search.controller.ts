@@ -54,4 +54,13 @@ export class SearchController {
   async trending() {
     return this.searchService.getTrendingSearches();
   }
+
+  @Get('synonyms')
+  @ApiOperation({ summary: 'Get all synonyms (Read-Only)' })
+  @ApiResponse({ status: 200, description: 'Returns list of synonyms' })
+  async getSynonyms() {
+    // Basic read-only endpoint for synonyms
+    const synonyms = await this.searchService.getAllSynonyms();
+    return { success: true, data: synonyms };
+  }
 }

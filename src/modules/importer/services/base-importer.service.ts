@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { FatwaData, ImportResult, IImporter } from '../interfaces/i-importer.interface';
 import { FatwaValidator } from '../utils/fatwa-validator.util';
 import * as crypto from 'crypto';
+import { KeywordExtractorService } from '../../search/keyword-extractor.service';
 
 export abstract class BaseImporterService implements IImporter {
   abstract readonly sourceName: string;
@@ -11,7 +12,10 @@ export abstract class BaseImporterService implements IImporter {
 
   protected readonly logger = new Logger(this.constructor.name);
 
-  constructor(protected readonly prisma: PrismaService) {}
+  constructor(
+    protected readonly prisma: PrismaService,
+    protected readonly keywordExtractor: KeywordExtractorService
+  ) {}
 
   /**
    * Defines the strategy for fetching raw items (URLs, RSS items, JSON objects)
@@ -119,13 +123,38 @@ export abstract class BaseImporterService implements IImporter {
                     updatedAt: new Date(),
                   }
                 });
+                
+                // Refresh keywords on update
+                await tx.fatwaKeyword.deleteMany({ where: { fatwaId: existingFatwa.id } });
+                
+                try {
+                  const category = await tx.category.findUnique({ where: { id: extractedData.categoryId } });
+                  const keywords = await this.keywordExtractor.extractKeywords({
+                    question: extractedData.question,
+                    answer: extractedData.answer,
+                    categoryName: category?.name
+                  });
+
+                  for (const kw of keywords) {
+                    const kwDb = await tx.keyword.upsert({
+                      where: { word: kw },
+                      update: {},
+                      create: { word: kw }
+                    });
+                    await tx.fatwaKeyword.create({
+                      data: { fatwaId: existingFatwa.id, keywordId: kwDb.id }
+                    });
+                  }
+                } catch (kwErr) {
+                  this.logger.warn(`Failed to update keywords for ${existingFatwa.slug}: ${kwErr.message}`);
+                }
               });
 
               metrics.updated++;
             }
           } else {
             // New Fatwa
-            await this.prisma.fatwa.create({
+            const newFatwa = await this.prisma.fatwa.create({
               data: {
                 slug: extractedData.slug,
                 question: extractedData.question,
@@ -142,6 +171,32 @@ export abstract class BaseImporterService implements IImporter {
                 }
               }
             });
+
+            // Extract and save Keywords
+            try {
+              const category = await this.prisma.category.findUnique({ where: { id: extractedData.categoryId } });
+              const keywords = await this.keywordExtractor.extractKeywords({
+                question: extractedData.question,
+                answer: extractedData.answer,
+                categoryName: category?.name
+              });
+
+              for (const kw of keywords) {
+                const kwDb = await this.prisma.keyword.upsert({
+                  where: { word: kw },
+                  update: {},
+                  create: { word: kw }
+                });
+                await this.prisma.fatwaKeyword.upsert({
+                  where: { fatwaId_keywordId: { fatwaId: newFatwa.id, keywordId: kwDb.id } },
+                  update: {},
+                  create: { fatwaId: newFatwa.id, keywordId: kwDb.id }
+                });
+              }
+            } catch (kwErr) {
+              this.logger.warn(`Failed to extract keywords for ${newFatwa.slug}: ${kwErr.message}`);
+            }
+
             metrics.imported++;
           }
         } catch (itemError) {
@@ -162,18 +217,29 @@ export abstract class BaseImporterService implements IImporter {
         try {
           await this.prisma.$executeRawUnsafe(`
             INSERT INTO search_index (fatwa_id, normalized_text, updated_at)
-            SELECT id, question || ' ' || answer, NOW()
-            FROM fatawa
-            WHERE source_id = '${source.id}'
+            SELECT 
+              f.id, 
+              concat_ws(' ', f.question, f.answer, s.name, c.name), 
+              NOW()
+            FROM fatawa f
+            LEFT JOIN scholars s ON f.scholar_id = s.id
+            LEFT JOIN categories c ON f.category_id = c.id
+            WHERE f.source_id = '${source.id}'
             ON CONFLICT (fatwa_id) DO UPDATE SET 
               normalized_text = EXCLUDED.normalized_text,
               updated_at = NOW();
           `);
     
           await this.prisma.$executeRawUnsafe(`
-            UPDATE search_index
-            SET search_vector = to_tsvector('arabic', normalized_text)
-            WHERE fatwa_id IN (SELECT id FROM fatawa WHERE source_id = '${source.id}');
+            UPDATE search_index si
+            SET search_vector = 
+              setweight(to_tsvector('arabic', coalesce(f.question, '') || ' ' || coalesce((SELECT string_agg(k.word, ' ') FROM fatwa_keywords fk JOIN keywords k ON fk.keyword_id = k.id WHERE fk.fatwa_id = f.id), '')), 'A') ||
+              setweight(to_tsvector('arabic', coalesce(s.name, '') || ' ' || coalesce(c.name, '')), 'B') ||
+              setweight(to_tsvector('arabic', coalesce(f.answer, '')), 'C')
+            FROM fatawa f
+            LEFT JOIN scholars s ON f.scholar_id = s.id
+            LEFT JOIN categories c ON f.category_id = c.id
+            WHERE f.id = si.fatwa_id AND f.source_id = '${source.id}';
           `);
           this.logger.log(`Search Index updated successfully for ${this.sourceName}.`);
         } catch (searchError) {

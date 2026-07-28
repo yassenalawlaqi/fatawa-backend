@@ -2,6 +2,9 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+import { seedCategories } from './seeds/categories.seed';
+import { seedSynonyms } from './seeds/synonyms.seed';
+
 async function main() {
   console.log('Seeding database...');
   
@@ -9,6 +12,8 @@ async function main() {
   await prisma.fatwa.deleteMany({});
   await prisma.searchLog.deleteMany({});
   await prisma.importJob.deleteMany({});
+  await prisma.category.deleteMany({});
+  await prisma.synonym.deleteMany({});
 
   // Create System Metadata
   await prisma.systemMetadata.upsert({
@@ -29,20 +34,11 @@ async function main() {
     await prisma.scholar.upsert({ where: { slug: s.slug }, update: {}, create: s });
   }
 
-  // Create Categories
-  const categories = [
-    'العقيدة', 'الطهارة', 'الصلاة', 'الزكاة', 'الصيام', 'الحج والعمرة', 'المعاملات', 'فتاوى عامة'
-  ];
-  
-  const categorySlugs = ['aqeedah', 'taharah', 'salat', 'zakat', 'siyam', 'hajj', 'muamalat', 'general'];
+  // Seed Hierarchical Categories
+  await seedCategories(prisma);
 
-  for (let i = 0; i < categories.length; i++) {
-    await prisma.category.upsert({
-      where: { slug: categorySlugs[i] },
-      update: {},
-      create: { name: categories[i], slug: categorySlugs[i] }
-    });
-  }
+  // Seed Synonyms
+  await seedSynonyms(prisma);
 
   // Create Sources
   const sources = [

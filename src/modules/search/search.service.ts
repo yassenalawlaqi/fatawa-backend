@@ -116,4 +116,10 @@ export class SearchService implements ISearchProvider {
 
     return result;
   }
+
+  async getAllSynonyms() {
+    // We should inject synonymService directly here, but let's just query via repository if we don't have it injected.
+    // Wait, the constructor needs SynonymService. Let's fix that.
+    return this.searchRepository.getAllSynonyms();
+  }
 }

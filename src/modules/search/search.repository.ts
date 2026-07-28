@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { SynonymService } from './synonym.service';
 
 export interface SearchResult {
   id: string;
@@ -18,7 +19,10 @@ export interface SearchResult {
 export class SearchRepository {
   private readonly logger = new Logger(SearchRepository.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly synonymService: SynonymService
+  ) {}
 
   async search(query: string, page: number = 1, limit: number = 20): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
     console.log("[Repository] search()");
@@ -43,17 +47,23 @@ export class SearchRepository {
     this.logger.log('FTS Query Started');
     const offset = (page - 1) * limit;
 
+    const expandedQuery = await this.synonymService.getExpandedTsQuery(query);
+    if (!expandedQuery) {
+      return { data: [], total: 0 };
+    }
+
+    // ts_rank weights: {D, C, B, A} = {0.1, 0.2, 0.4, 1.0}
     const rawQuery = Prisma.sql`
       SELECT 
         f.id, f.slug, f.question, f.answer, 
         s.name as scholar, c.name as category, src.name as source,
-        ts_rank(si.search_vector, plainto_tsquery('arabic', ${query})) as score
+        ts_rank('{0.1, 0.2, 0.4, 1.0}', si.search_vector, to_tsquery('arabic', ${expandedQuery})) as score
       FROM fatawa f
       JOIN search_index si ON f.id = si.fatwa_id
       JOIN scholars s ON f.scholar_id = s.id
       JOIN categories c ON f.category_id = c.id
       JOIN sources src ON f.source_id = src.id
-      WHERE si.search_vector @@ plainto_tsquery('arabic', ${query})
+      WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
         AND f.verification_status = 'verified'
       ORDER BY score DESC
       LIMIT ${limit} OFFSET ${offset}
@@ -63,7 +73,7 @@ export class SearchRepository {
       SELECT COUNT(*)::int as total
       FROM fatawa f
       JOIN search_index si ON f.id = si.fatwa_id
-      WHERE si.search_vector @@ plainto_tsquery('arabic', ${query})
+      WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
         AND f.verification_status = 'verified'
     `;
 
@@ -155,32 +165,50 @@ export class SearchRepository {
   }
 
   async autocomplete(q: string) {
-    const rawData = await this.prisma.fatwa.findMany({
-      where: {
-        verificationStatus: 'verified',
-        OR: [
-          { question: { contains: q, mode: Prisma.QueryMode.insensitive } },
-          { scholar: { name: { contains: q, mode: Prisma.QueryMode.insensitive } } },
-          { category: { name: { contains: q, mode: Prisma.QueryMode.insensitive } } },
-        ]
-      },
-      select: { question: true, scholar: { select: { name: true } }, category: { select: { name: true } } },
-      take: 10
+    // 1. Exact Match Questions (Limit 5)
+    const questions = await this.prisma.fatwa.findMany({
+      where: { question: { contains: q, mode: Prisma.QueryMode.insensitive }, verificationStatus: 'verified' },
+      select: { question: true },
+      take: 5
+    });
+
+    // 2. Keywords
+    const keywords = await this.prisma.keyword.findMany({
+      where: { word: { startsWith: q, mode: Prisma.QueryMode.insensitive } },
+      select: { word: true },
+      take: 3
+    });
+
+    // 3. Synonyms
+    const synonyms = await this.prisma.synonym.findMany({
+      where: { word: { startsWith: q, mode: Prisma.QueryMode.insensitive } },
+      select: { word: true },
+      take: 3
+    });
+
+    // 4. Categories
+    const categories = await this.prisma.category.findMany({
+      where: { name: { contains: q, mode: Prisma.QueryMode.insensitive } },
+      select: { name: true },
+      take: 3
+    });
+
+    // 5. Scholars
+    const scholars = await this.prisma.scholar.findMany({
+      where: { name: { contains: q, mode: Prisma.QueryMode.insensitive } },
+      select: { name: true },
+      take: 2
     });
 
     const suggestions = new Set<string>();
-    
-    rawData.forEach(f => {
-      if (f.question.toLowerCase().includes(q.toLowerCase())) {
-        suggestions.add(f.question.substring(0, 50));
-      } else if (f.scholar.name.toLowerCase().includes(q.toLowerCase())) {
-        suggestions.add(`فتاوى ${f.scholar.name}`);
-      } else if (f.category.name.toLowerCase().includes(q.toLowerCase())) {
-        suggestions.add(f.category.name);
-      }
-    });
 
-    return Array.from(suggestions).map(term => ({ term }));
+    questions.forEach(f => suggestions.add(f.question.substring(0, 60)));
+    keywords.forEach(k => suggestions.add(k.word));
+    synonyms.forEach(s => suggestions.add(s.word));
+    categories.forEach(c => suggestions.add(c.name));
+    scholars.forEach(s => suggestions.add(`فتاوى ${s.name}`));
+
+    return Array.from(suggestions).slice(0, 10).map(term => ({ term }));
   }
 
   async logSearch(query: string, resultsCount: number, executionMs: number, engine: string) {
@@ -221,20 +249,73 @@ export class SearchRepository {
     try {
       await this.prisma.$executeRawUnsafe(`
         INSERT INTO search_index (fatwa_id, normalized_text, updated_at)
-        SELECT id, question || ' ' || answer, NOW()
-        FROM fatawa
+        SELECT 
+          f.id, 
+          concat_ws(' ', f.question, f.answer, s.name, c.name), 
+          NOW()
+        FROM fatawa f
+        LEFT JOIN scholars s ON f.scholar_id = s.id
+        LEFT JOIN categories c ON f.category_id = c.id
         ON CONFLICT (fatwa_id) DO UPDATE SET 
           normalized_text = EXCLUDED.normalized_text,
           updated_at = NOW();
       `);
 
       await this.prisma.$executeRawUnsafe(`
-        UPDATE search_index
-        SET search_vector = to_tsvector('arabic', normalized_text);
+        UPDATE search_index si
+        SET search_vector = 
+          setweight(to_tsvector('arabic', coalesce(f.question, '') || ' ' || coalesce((SELECT string_agg(k.word, ' ') FROM fatwa_keywords fk JOIN keywords k ON fk.keyword_id = k.id WHERE fk.fatwa_id = f.id), '')), 'A') ||
+          setweight(to_tsvector('arabic', coalesce(s.name, '') || ' ' || coalesce(c.name, '')), 'B') ||
+          setweight(to_tsvector('arabic', coalesce(f.answer, '')), 'C')
+        FROM fatawa f
+        LEFT JOIN scholars s ON f.scholar_id = s.id
+        LEFT JOIN categories c ON f.category_id = c.id
+        WHERE f.id = si.fatwa_id;
       `);
       this.logger.log('Search Index rebuilt successfully.');
     } catch (error: any) {
       this.logger.error(`Failed to rebuild search index: ${error.message}`);
     }
+  }
+
+  async rebuildSearchIndexForSource(sourceId: string) {
+    this.logger.log(`Rebuilding PostgreSQL Search Index for source: ${sourceId}...`);
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        INSERT INTO search_index (fatwa_id, normalized_text, updated_at)
+        SELECT 
+          f.id, 
+          concat_ws(' ', f.question, f.answer, s.name, c.name), 
+          NOW()
+        FROM fatawa f
+        LEFT JOIN scholars s ON f.scholar_id = s.id
+        LEFT JOIN categories c ON f.category_id = c.id
+        WHERE f.source_id = '${sourceId}'
+        ON CONFLICT (fatwa_id) DO UPDATE SET 
+          normalized_text = EXCLUDED.normalized_text,
+          updated_at = NOW();
+      `);
+
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE search_index si
+        SET search_vector = 
+          setweight(to_tsvector('arabic', coalesce(f.question, '') || ' ' || coalesce((SELECT string_agg(k.word, ' ') FROM fatwa_keywords fk JOIN keywords k ON fk.keyword_id = k.id WHERE fk.fatwa_id = f.id), '')), 'A') ||
+          setweight(to_tsvector('arabic', coalesce(s.name, '') || ' ' || coalesce(c.name, '')), 'B') ||
+          setweight(to_tsvector('arabic', coalesce(f.answer, '')), 'C')
+        FROM fatawa f
+        LEFT JOIN scholars s ON f.scholar_id = s.id
+        LEFT JOIN categories c ON f.category_id = c.id
+        WHERE f.id = si.fatwa_id AND f.source_id = '${sourceId}';
+      `);
+      this.logger.log(`Search Index rebuilt successfully for source: ${sourceId}`);
+    } catch (error: any) {
+      this.logger.error(`Failed to rebuild search index for source: ${error.message}`);
+    }
+  }
+
+  async getAllSynonyms() {
+    return this.prisma.synonym.findMany({
+      orderBy: { word: 'asc' }
+    });
   }
 }

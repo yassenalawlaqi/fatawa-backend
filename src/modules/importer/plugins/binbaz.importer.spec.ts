@@ -4,70 +4,127 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ContentExtractorService } from '../services/content-extractor.service';
 import { FatwaValidator } from '../utils/fatwa-validator.util';
 
-describe('BinBazImporter - Reference Architecture', () => {
+describe('BinBazImporter', () => {
   let importer: BinBazImporter;
-  let prismaService: PrismaService;
-  let extractor: ContentExtractorService;
+  let prismaService: jest.Mocked<PrismaService>;
+  let extractorService: jest.Mocked<ContentExtractorService>;
 
   beforeEach(async () => {
     const mockPrismaService = {
-      source: { upsert: jest.fn().mockResolvedValue({ id: 'source-id' }) },
-      scholar: { upsert: jest.fn().mockResolvedValue({ id: 'scholar-id' }) },
-      category: { upsert: jest.fn().mockResolvedValue({ id: 'category-id' }) },
-      fatwa: {
-        findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({ id: 'fatwa-id' }),
-        update: jest.fn().mockResolvedValue({ id: 'fatwa-id' }),
-      },
-      fatwaRevision: {
-        count: jest.fn().mockResolvedValue(0),
-        create: jest.fn().mockResolvedValue({ id: 'rev-id' }),
-      },
-      $transaction: jest.fn((cb) => cb(mockPrismaService)),
+      scholar: { upsert: jest.fn() },
+      category: { upsert: jest.fn() },
     };
 
-    const mockContentExtractor = {
+    const mockExtractorService = {
       extractContent: jest.fn(),
-      extractHtml: jest.fn().mockReturnValue({
-        question: 'حكم صلاة الوتر',
-        answer: 'صلاة الوتر سنة مؤكدة. والله أعلم.',
-        rawAnswerHtml: '<p>صلاة الوتر سنة مؤكدة. والله أعلم.</p>'
-      }),
-      extractAttachments: jest.fn().mockReturnValue([{ type: 'pdf', url: 'http://test.pdf', title: 'ملف PDF' }]),
+      extractHtml: jest.fn(),
+      extractAttachments: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BinBazImporter,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: ContentExtractorService, useValue: mockContentExtractor },
+        { provide: ContentExtractorService, useValue: mockExtractorService },
       ],
     }).compile();
 
     importer = module.get<BinBazImporter>(BinBazImporter);
-    prismaService = module.get<PrismaService>(PrismaService);
-    extractor = module.get<ContentExtractorService>(ContentExtractorService);
+    prismaService = module.get(PrismaService);
+    extractorService = module.get(ContentExtractorService);
+    
+    // Disable logging
+    jest.spyOn(importer['logger'], 'log').mockImplementation(() => {});
+    jest.spyOn(importer['logger'], 'warn').mockImplementation(() => {});
+    jest.spyOn(importer['logger'], 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
     expect(importer).toBeDefined();
   });
 
-  describe('extractFatwaData', () => {
-    it('should correctly extract clean text and attachments using the Reference Architecture', async () => {
-      const mockHtml = `<html><body><h1 class="article-title">حكم صلاة الوتر</h1><div class="article-content"><p>صلاة الوتر سنة مؤكدة. والله أعلم.</p><a href="file.pdf">ملف PDF</a></div><div class="article-date">2026-07-19</div></body></html>`;
+  describe('fetchRawItems', () => {
+    it('should paginate and extract fatwa URLs from minified HTML fixtures', async () => {
+      const page1Html = `
+        <html><body>
+          <article class="fatwa"><a href="/fatwas/123">Fatwa 123</a></article>
+          <article class="fatwa"><a href="/fatwas/456">Fatwa 456</a></article>
+        </body></html>
+      `;
+      const page2Html = `<html><body></body></html>`;
 
-      const result = await importer.extractFatwaData({ url: 'https://binbaz.org.sa/fatwas/999/test', html: mockHtml });
+      extractorService.extractContent
+        .mockResolvedValueOnce(page1Html)
+        .mockResolvedValueOnce(page2Html);
 
-      expect(result.slug).toBe('binbaz-999');
-      expect(result.question).toBe('حكم صلاة الوتر');
-      expect(result.answer).toContain('صلاة الوتر سنة مؤكدة');
-      expect(result.attachments).toHaveLength(1);
-      expect(result.attachments[0].url).toBe('http://test.pdf');
+      const items = await importer.fetchRawItems();
+
+      expect(items).toHaveLength(2);
+      expect(items[0].url).toBe('https://binbaz.org.sa/fatwas/123');
+      expect(items[1].url).toBe('https://binbaz.org.sa/fatwas/456');
+      expect(extractorService.extractContent).toHaveBeenCalledTimes(2);
+    });
+
+    it('should handle errors during pagination gracefully', async () => {
+      extractorService.extractContent.mockRejectedValueOnce(new Error('Network error'));
+      
+      const items = await importer.fetchRawItems();
+      
+      expect(items).toHaveLength(0); // Should stop and return empty list
     });
   });
 
-  describe('Validation & Fingerprint Logic (BaseImporterService)', () => {
+  describe('extractFatwaData', () => {
+    it('should parse fatwa details from minified HTML fixture', async () => {
+      const fatwaHtml = `
+        <html><body>
+          <h2 class="article-title__question">ما حكم الصلاة؟</h2>
+          <div class="article-content">الحمد لله الصلاة واجبة.</div>
+          <div class="categories__item">فقه العبادات</div>
+          <div class="article-date">2023-01-01T00:00:00.000Z</div>
+        </body></html>
+      `;
+
+      extractorService.extractContent.mockResolvedValue(fatwaHtml);
+      extractorService.extractHtml.mockReturnValue({
+        question: 'fallback question',
+        answer: 'fallback answer',
+        rawAnswerHtml: '',
+      });
+      extractorService.extractAttachments.mockReturnValue([]);
+
+      prismaService.scholar.upsert.mockResolvedValue({ id: 'scholar-1', name: 'Ibn Baz' } as any);
+      prismaService.category.upsert.mockResolvedValue({ id: 'cat-1', name: 'فقه العبادات' } as any);
+
+      const data = await importer.extractFatwaData({ url: 'https://binbaz.org.sa/fatwas/789' });
+
+      expect(data.slug).toBe('binbaz-789');
+      expect(data.question).toBe('ما حكم الصلاة؟'); // Picked from cheerio parsing
+      expect(data.answer).toBe('الحمد لله الصلاة واجبة.'); // Picked from cheerio parsing
+      expect(data.scholarId).toBe('scholar-1');
+      expect(data.categoryId).toBe('cat-1');
+      expect(data.publishedAt).toBeInstanceOf(Date);
+      expect(data.publishedAt.toISOString()).toBe('2023-01-01T00:00:00.000Z');
+      expect(prismaService.scholar.upsert).toHaveBeenCalled();
+      expect(prismaService.category.upsert).toHaveBeenCalled();
+    });
+
+    it('should throw an error if question or answer is missing', async () => {
+      const emptyHtml = `<html><body></body></html>`;
+      extractorService.extractContent.mockResolvedValue(emptyHtml);
+      extractorService.extractHtml.mockReturnValue({ question: '', answer: '', rawAnswerHtml: '' });
+
+      await expect(
+        importer.extractFatwaData({ url: 'https://binbaz.org.sa/fatwas/789' })
+      ).rejects.toThrow('Parsing failed for question or answer at https://binbaz.org.sa/fatwas/789');
+    });
+  });
+  
+  describe('Validation & Fingerprint Logic', () => {
     it('Validator should reject empty question or answer', () => {
       const valid = FatwaValidator.validate({ question: 'Q', answer: 'This is a long valid answer', slug: 's', url: 'http://test' });
       const invalidEmpty = FatwaValidator.validate({ question: '', answer: 'This is a long valid answer', slug: 's', url: 'http://test' });

@@ -4,6 +4,8 @@ import { SearchController } from './search.controller';
 import { SearchService } from './search.service';
 import { SearchRepository } from './search.repository';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SynonymService } from './synonym.service';
+import { KeywordExtractorService } from './keyword-extractor.service';
 
 @Module({
   imports: [
@@ -40,11 +42,13 @@ import { PrismaModule } from '../prisma/prisma.module';
   providers: [
     SearchRepository,
     SearchService,
+    SynonymService,
+    KeywordExtractorService,
     {
       provide: 'ISearchProvider',
       useExisting: SearchService,
     },
   ],
-  exports: ['ISearchProvider', SearchRepository],
+  exports: ['ISearchProvider', SearchRepository, SynonymService, KeywordExtractorService],
 })
 export class SearchModule {}

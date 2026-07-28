@@ -1,6 +1,6 @@
 {
   "name": "fatawa-backend",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "",
   "author": "",
   "private": true,
@@ -72,6 +72,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
+    "nock": "^14.0.16",
     "prettier": "^3.4.2",
     "prisma": "^5.14.0",
     "source-map-support": "^0.5.21",
@@ -98,7 +99,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/../test/setup.ts"
+    ]
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
