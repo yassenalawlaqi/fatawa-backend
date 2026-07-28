@@ -8,12 +8,7 @@ import { seedSynonyms } from './seeds/synonyms.seed';
 async function main() {
   console.log('Seeding database...');
   
-  // Wipe old fatawa (Mock Data removal)
-  await prisma.fatwa.deleteMany({});
-  await prisma.searchLog.deleteMany({});
-  await prisma.importJob.deleteMany({});
-  await prisma.category.deleteMany({});
-  await prisma.synonym.deleteMany({});
+  // Removed destructive deleteMany calls to protect production data
 
   // Create System Metadata
   await prisma.systemMetadata.upsert({
