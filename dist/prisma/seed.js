@@ -6,11 +6,6 @@ const categories_seed_1 = require("./seeds/categories.seed");
 const synonyms_seed_1 = require("./seeds/synonyms.seed");
 async function main() {
     console.log('Seeding database...');
-    await prisma.fatwa.deleteMany({});
-    await prisma.searchLog.deleteMany({});
-    await prisma.importJob.deleteMany({});
-    await prisma.category.deleteMany({});
-    await prisma.synonym.deleteMany({});
     await prisma.systemMetadata.upsert({
         where: { key: 'database_version' },
         update: {},

@@ -24,7 +24,7 @@ export class SearchService implements ISearchProvider {
     const startTime = Date.now();
     let isCacheHit = false;
 
-    const cacheKey = `search:${query}:${page}:${limit}`;
+    const cacheKey = `search:${query}:${page}:${limit}:${scholar || 'all'}`;
 
     try {
       try {
@@ -42,7 +42,7 @@ export class SearchService implements ISearchProvider {
         this.logger.warn(`Cache retrieval failed, proceeding to DB: ${cacheError.message}`);
       }
 
-      const result = await this.searchRepository.search(query, parseInt(page as any, 10), parseInt(limit as any, 10));
+      const result = await this.searchRepository.search(query, parseInt(page as any, 10), parseInt(limit as any, 10), scholar);
       
       const executionMs = Date.now() - startTime;
       const totalPages = Math.ceil(result.total / limit);
@@ -81,16 +81,16 @@ export class SearchService implements ISearchProvider {
     }
   }
 
-  async autocomplete(q: string) {
+  async autocomplete(q: string, scholar?: string) {
     if (!q || q.length < 2) return { suggestions: [] };
     
-    const cacheKey = `autocomplete:${q}`;
+    const cacheKey = `autocomplete:${q}:${scholar || 'all'}`;
     try {
       const cached = await this.cacheManager.get(cacheKey);
       if (cached) return cached;
     } catch(e) {}
 
-    const suggestions = await this.searchRepository.autocomplete(q);
+    const suggestions = await this.searchRepository.autocomplete(q, scholar);
     const result = { suggestions };
 
     try {

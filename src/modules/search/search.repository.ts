@@ -24,26 +24,26 @@ export class SearchRepository {
     private readonly synonymService: SynonymService
   ) {}
 
-  async search(query: string, page: number = 1, limit: number = 20): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
+  async search(query: string, page: number = 1, limit: number = 20, scholar?: string): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
     console.log("[Repository] search()");
     this.logger.log('Repository Started');
     try {
-      const ftsResult = await this.searchFTS(query, page, limit);
+      const ftsResult = await this.searchFTS(query, page, limit, scholar);
       if (ftsResult.total > 0) {
         return { ...ftsResult, engine: 'fts' };
       }
       this.logger.log('FTS returned 0 results, trying fallback...');
-      const fallbackResult = await this.searchFallback(query, page, limit);
+      const fallbackResult = await this.searchFallback(query, page, limit, scholar);
       return { ...fallbackResult, engine: fallbackResult.total > 0 ? 'fallback' : 'fts' };
     } catch (error: any) {
       this.logger.warn(`FTS query failed, falling back to basic search: ${error.message}`);
       
-      const fallbackResult = await this.searchFallback(query, page, limit);
+      const fallbackResult = await this.searchFallback(query, page, limit, scholar);
       return { ...fallbackResult, engine: 'fallback' };
     }
   }
 
-  async searchFTS(query: string, page: number, limit: number): Promise<{ data: SearchResult[], total: number }> {
+  async searchFTS(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number }> {
     this.logger.log('FTS Query Started');
     const offset = (page - 1) * limit;
 
@@ -51,6 +51,8 @@ export class SearchRepository {
     if (!expandedQuery) {
       return { data: [], total: 0 };
     }
+
+    const scholarFilter = scholar ? Prisma.sql`AND s.slug = ${scholar}` : Prisma.empty;
 
     // ts_rank weights: {D, C, B, A} = {0.1, 0.2, 0.4, 1.0}
     const rawQuery = Prisma.sql`
@@ -65,6 +67,7 @@ export class SearchRepository {
       JOIN sources src ON f.source_id = src.id
       WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
         AND f.verification_status = 'verified'
+        ${scholarFilter}
       ORDER BY score DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -73,8 +76,10 @@ export class SearchRepository {
       SELECT COUNT(*)::int as total
       FROM fatawa f
       JOIN search_index si ON f.id = si.fatwa_id
+      JOIN scholars s ON f.scholar_id = s.id
       WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
         AND f.verification_status = 'verified'
+        ${scholarFilter}
     `;
 
     this.logger.log('COUNT Query Started');
@@ -94,7 +99,7 @@ export class SearchRepository {
     return { data: mappedData, total };
   }
 
-  async searchFallback(query: string, page: number, limit: number): Promise<{ data: SearchResult[], total: number }> {
+  async searchFallback(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number }> {
     const terms = query.split(' ').filter(t => t.length > 1);
     
     if (terms.length === 0) {
@@ -115,6 +120,7 @@ export class SearchRepository {
         where: {
           AND: [
             { verificationStatus: 'verified' },
+            ...(scholar ? [{ scholar: { slug: scholar } }] : []),
             ...searchConditions
           ]
         },
@@ -164,10 +170,14 @@ export class SearchRepository {
     }
   }
 
-  async autocomplete(q: string) {
+  async autocomplete(q: string, scholar?: string) {
     // 1. Exact Match Questions (Limit 5)
     const questions = await this.prisma.fatwa.findMany({
-      where: { question: { contains: q, mode: Prisma.QueryMode.insensitive }, verificationStatus: 'verified' },
+      where: { 
+        question: { contains: q, mode: Prisma.QueryMode.insensitive }, 
+        verificationStatus: 'verified',
+        ...(scholar ? { scholar: { slug: scholar } } : [])
+      },
       select: { question: true },
       take: 5
     });

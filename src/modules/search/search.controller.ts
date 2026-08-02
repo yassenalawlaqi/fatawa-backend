@@ -44,8 +44,8 @@ export class SearchController {
   @Get('autocomplete')
   @ApiOperation({ summary: 'Autocomplete suggestions' })
   @ApiResponse({ status: 200, description: 'Successful autocomplete response.' })
-  async autocomplete(@Query('q') q: string) {
-    return this.searchService.autocomplete(q);
+  async autocomplete(@Query('q') q: string, @Query('scholar') scholar?: string) {
+    return this.searchService.autocomplete(q, scholar);
   }
 
   @Get('trending')
