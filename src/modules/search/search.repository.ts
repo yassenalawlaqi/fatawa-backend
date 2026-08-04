@@ -24,7 +24,7 @@ export class SearchRepository {
     private readonly synonymService: SynonymService
   ) {}
 
-  async search(query: string, page: number = 1, limit: number = 20, scholar?: string): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback' }> {
+  async search(query: string, page: number = 1, limit: number = 20, scholar?: string): Promise<{ data: SearchResult[], total: number, engine: 'fts' | 'fallback', aggregations?: any }> {
     console.log("[Repository] search()");
     this.logger.log('Repository Started');
     try {
@@ -34,6 +34,7 @@ export class SearchRepository {
       }
       this.logger.log('FTS returned 0 results, trying fallback...');
       const fallbackResult = await this.searchFallback(query, page, limit, scholar);
+      // Let's pass the aggregations from FTS if fallback doesn't have it, but fallback will calculate its own.
       return { ...fallbackResult, engine: fallbackResult.total > 0 ? 'fallback' : 'fts' };
     } catch (error: any) {
       this.logger.warn(`FTS query failed, falling back to basic search: ${error.message}`);
@@ -43,7 +44,7 @@ export class SearchRepository {
     }
   }
 
-  async searchFTS(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number }> {
+  async searchFTS(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number, aggregations: any }> {
     this.logger.log('FTS Query Started');
     const offset = (page - 1) * limit;
 
@@ -82,10 +83,22 @@ export class SearchRepository {
         ${scholarFilter}
     `;
 
+    // Aggregation query to get counts per scholar regardless of the scholar filter
+    const aggQuery = Prisma.sql`
+      SELECT s.slug, COUNT(*)::int as count
+      FROM fatawa f
+      JOIN search_index si ON f.id = si.fatwa_id
+      JOIN scholars s ON f.scholar_id = s.id
+      WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
+        AND f.verification_status = 'verified'
+      GROUP BY s.slug
+    `;
+
     this.logger.log('COUNT Query Started');
-    const [data, countResult] = await Promise.all([
+    const [data, countResult, aggResult] = await Promise.all([
       this.prisma.$queryRaw<SearchResult[]>(rawQuery),
-      this.prisma.$queryRaw<{total: number}[]>(countQuery)
+      this.prisma.$queryRaw<{total: number}[]>(countQuery),
+      this.prisma.$queryRaw<{slug: string, count: number}[]>(aggQuery)
     ]);
 
     this.logger.log(`typeof countResult[0]?.total: ${typeof countResult[0]?.total}`);
@@ -96,10 +109,20 @@ export class SearchRepository {
       questionTitle: item.question.substring(0, 80) + '...',
     }));
 
-    return { data: mappedData, total };
+    const aggregations = {
+      scholars: {} as Record<string, number>
+    };
+
+    if (aggResult) {
+      aggResult.forEach(row => {
+        aggregations.scholars[row.slug] = Number(row.count);
+      });
+    }
+
+    return { data: mappedData, total, aggregations };
   }
 
-  async searchFallback(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number }> {
+  async searchFallback(query: string, page: number, limit: number, scholar?: string): Promise<{ data: SearchResult[], total: number, aggregations: any }> {
     const terms = query.split(' ').filter(t => t.length > 1);
     
     if (terms.length === 0) {
@@ -120,7 +143,7 @@ export class SearchRepository {
         where: {
           AND: [
             { verificationStatus: 'verified' },
-            ...(scholar ? [{ scholar: { slug: scholar } }] : []),
+            // Don't filter by scholar here so we can aggregate
             ...searchConditions
           ]
         },
@@ -133,12 +156,12 @@ export class SearchRepository {
       const lowerQuery = query.toLowerCase();
 
       if (fatwa.question?.toLowerCase().includes(lowerQuery)) score += 100;
-      if (fatwa.scholar?.name?.toLowerCase().includes(lowerQuery)) score += 70;
+      if (fatwa.scholar?.name?.toLowerCase().includes(lowerQuery)) score += 40;
       if (fatwa.category?.name?.toLowerCase().includes(lowerQuery)) score += 50;
 
       terms.forEach(term => {
         const lowerTerm = term.toLowerCase();
-        if (fatwa.question?.toLowerCase().includes(lowerTerm)) score += 40;
+        if (fatwa.question?.toLowerCase().includes(lowerTerm)) score += 80;
         if (fatwa.answer?.toLowerCase().includes(lowerTerm)) score += 20;
       });
 
@@ -155,13 +178,25 @@ export class SearchRepository {
       };
     });
 
-    scoredData.sort((a, b) => b.score - a.score);
+      scoredData.sort((a, b) => b.score - a.score);
 
-      const total = scoredData.length;
+      // Filter by scholar if requested
+      const filteredData = scholar ? scoredData.filter(d => d.slug === scholar) : scoredData;
+
+      const total = filteredData.length;
       const offset = (page - 1) * limit;
-      const paginatedData = scoredData.slice(offset, offset + limit);
+      const paginatedData = filteredData.slice(offset, offset + limit);
 
-      return { data: paginatedData, total };
+      const aggregations = { scholars: {} as Record<string, number> };
+      scoredData.forEach(d => {
+        // Find scholar slug from raw data to aggregate
+        const rawItem = rawData.find(r => r.id === d.id);
+        if (rawItem && rawItem.scholar?.slug) {
+          aggregations.scholars[rawItem.scholar.slug] = (aggregations.scholars[rawItem.scholar.slug] || 0) + 1;
+        }
+      });
+
+      return { data: paginatedData, total, aggregations };
     } catch (e: any) {
       this.logger.error(`Exception Name: ${e.name}`);
       this.logger.error(`Message: ${e.message}`);
