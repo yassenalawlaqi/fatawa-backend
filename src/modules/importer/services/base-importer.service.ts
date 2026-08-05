@@ -20,7 +20,7 @@ export abstract class BaseImporterService implements IImporter {
   /**
    * Defines the strategy for fetching raw items (URLs, RSS items, JSON objects)
    */
-  abstract fetchRawItems(): Promise<any[]>;
+  abstract fetchRawItems(startPage?: number): Promise<any[]>;
 
   /**
    * Defines the strategy for extracting data from a raw item
@@ -64,12 +64,58 @@ export abstract class BaseImporterService implements IImporter {
         },
       });
 
-      const rawItems = await this.fetchRawItems();
-      this.logger.log(`Found ${rawItems.length} items to process from ${this.sourceName}.`);
+      // Checkpoint Recovery
+      const checkpointKey = `import_checkpoint_${this.sourceSlug}`;
+      let startIndex = 0;
+      const checkpointMeta = await this.prisma.systemMetadata.findUnique({ where: { key: checkpointKey } });
+      if (checkpointMeta && !isNaN(Number(checkpointMeta.value))) {
+        startIndex = Number(checkpointMeta.value);
+        this.logger.log(`Resuming ${this.sourceName} from checkpoint index: ${startIndex}`);
+      }
+
+      const allRawItems = await this.fetchRawItems();
+      
+      const importLimit = parseInt(process.env.IMPORT_LIMIT || '0', 10);
+      let rawItems = allRawItems.slice(startIndex);
+      
+      if (importLimit > 0) {
+        rawItems = rawItems.slice(0, importLimit);
+        this.logger.log(`IMPORT_LIMIT is set to ${importLimit}. Processing ${rawItems.length} items from index ${startIndex}.`);
+      } else {
+        this.logger.log(`Found ${rawItems.length} remaining items to process from ${this.sourceName} (Total: ${allRawItems.length}).`);
+      }
+
+      let processedCount = 0;
 
       for (const item of rawItems) {
         try {
-          const extractedData = await this.extractFatwaData(item);
+          // Rate Limiting (Delay 500 - 1500ms)
+          const delayMs = Math.floor(Math.random() * 1000) + 500;
+          await new Promise(res => setTimeout(res, delayMs));
+
+          // Retry Logic (up to 3 times)
+          let extractedData: FatwaData | null = null;
+          let retryCount = 0;
+          let lastError = null;
+
+          while (retryCount < 3) {
+            try {
+              extractedData = await this.extractFatwaData(item);
+              break;
+            } catch (err) {
+              lastError = err;
+              retryCount++;
+              if (retryCount < 3) {
+                this.logger.warn(`Retrying extractFatwaData for ${item.url} (Attempt ${retryCount}/3)...`);
+                await new Promise(res => setTimeout(res, 2000));
+              }
+            }
+          }
+
+          if (!extractedData) {
+            throw lastError || new Error(`Failed to extract data after 3 attempts`);
+          }
+          
           extractedData.sourceId = source.id;
 
           // Validate
@@ -203,6 +249,20 @@ export abstract class BaseImporterService implements IImporter {
           // Error Isolation: Do not stop the entire loop
           this.logger.error(`Error processing item in ${this.sourceSlug}`, itemError.stack);
           metrics.failed++;
+        }
+
+        // Save Progress / Checkpoint every 100 items or at the end
+        processedCount++;
+        if (processedCount % 100 === 0 || processedCount === rawItems.length) {
+          const currentIndex = startIndex + processedCount;
+          await this.prisma.systemMetadata.upsert({
+            where: { key: checkpointKey },
+            update: { value: currentIndex.toString() },
+            create: { key: checkpointKey, value: currentIndex.toString() }
+          });
+          
+          // Print Live Progress
+          console.log(`\n[PROGRESS] ${this.sourceName}: ${currentIndex} / ${allRawItems.length} processed.`);
         }
       }
 

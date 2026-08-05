@@ -95,9 +95,9 @@ export class UthaymeenImporter extends BaseImporterService {
     const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
 
     const scholar = await this.prisma.scholar.upsert({
-      where: { slug: 'uthaymeen' },
+      where: { slug: 'ibn-uthaymeen' },
       update: {},
-      create: { name: 'محمد بن صالح العثيمين', slug: 'uthaymeen' }
+      create: { name: 'محمد بن صالح العثيمين', slug: 'ibn-uthaymeen' }
     });
 
     const category = await this.prisma.category.upsert({

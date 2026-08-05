@@ -95,9 +95,9 @@ export class FawzanImporter extends BaseImporterService {
     const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
 
     const scholar = await this.prisma.scholar.upsert({
-      where: { slug: 'fawzan' },
+      where: { slug: 'al-fawzan' },
       update: {},
-      create: { name: 'صالح بن فوزان الفوزان', slug: 'fawzan' }
+      create: { name: 'صالح بن فوزان الفوزان', slug: 'al-fawzan' }
     });
 
     const cheerio = require('cheerio');
