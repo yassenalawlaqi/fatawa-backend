@@ -115,6 +115,21 @@ export class SearchService implements ISearchProvider {
       this.searchRepository.logSearch(query, result.total, executionMs, result.engine)
         .catch(e => this.logger.error(e));
 
+      if (process.env.SEARCH_DEBUG === 'true' || process.env.NODE_ENV === 'development') {
+        this.logger.debug(JSON.stringify({
+          _type: 'SearchDebug',
+          originalQuery: rawQuery,
+          normalizedQuery: query,
+          scholarFilter: scholar || 'all',
+          ftsResultCount: result.engine === 'fts' ? result.total : 0,
+          fallbackResultCount: result.engine === 'fallback' ? result.total : 0,
+          aggregationCounts: result.aggregations?.scholars,
+          cacheKey,
+          executionMs,
+          engineUsed: result.engine
+        }, null, 2));
+      }
+
       return response;
 
     } catch (error) {

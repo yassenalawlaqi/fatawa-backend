@@ -29,12 +29,13 @@ export class SearchRepository {
     this.logger.log('Repository Started');
     try {
       const ftsResult = await this.searchFTS(query, page, limit, scholar);
-      if (ftsResult.total > 0) {
+      const totalAcrossAll = (Object.values(ftsResult.aggregations?.scholars || {}).reduce((a: any, b: any) => a + b, 0)) as number;
+
+      if (ftsResult.total > 0 || totalAcrossAll > 0) {
         return { ...ftsResult, engine: 'fts' };
       }
-      this.logger.log('FTS returned 0 results, trying fallback...');
+      this.logger.log('FTS returned 0 results globally, trying fallback...');
       const fallbackResult = await this.searchFallback(query, page, limit, scholar);
-      // Let's pass the aggregations from FTS if fallback doesn't have it, but fallback will calculate its own.
       return { ...fallbackResult, engine: fallbackResult.total > 0 ? 'fallback' : 'fts' };
     } catch (error: any) {
       this.logger.warn(`FTS query failed, falling back to basic search: ${error.message}`);
@@ -50,7 +51,7 @@ export class SearchRepository {
 
     const expandedQuery = await this.synonymService.getExpandedTsQuery(query);
     if (!expandedQuery) {
-      return { data: [], total: 0 };
+      return { data: [], total: 0, aggregations: { scholars: {} } };
     }
 
     const scholarFilter = scholar ? Prisma.sql`AND s.slug = ${scholar}` : Prisma.empty;
@@ -60,7 +61,15 @@ export class SearchRepository {
       SELECT 
         f.id, f.slug, f.question, f.answer, 
         s.name as scholar, c.name as category, src.name as source,
-        ts_rank('{0.1, 0.2, 0.4, 1.0}', si.search_vector, to_tsquery('arabic', ${expandedQuery})) as score
+        (
+          CASE
+            WHEN f.question ILIKE '%' || ${query} || '%' THEN 5000
+            WHEN EXISTS(SELECT 1 FROM fatwa_keywords fk JOIN keywords k ON fk.keyword_id = k.id WHERE fk.fatwa_id = f.id AND k.word ILIKE '%' || ${query} || '%') THEN 3000
+            WHEN f.answer ILIKE '%' || ${query} || '%' THEN 500
+            ELSE 0
+          END
+          + (ts_rank_cd('{0.1, 0.2, 0.4, 1.0}', si.search_vector, to_tsquery('arabic', ${expandedQuery})) * 100)
+        ) as score
       FROM fatawa f
       JOIN search_index si ON f.id = si.fatwa_id
       JOIN scholars s ON f.scholar_id = s.id
@@ -69,7 +78,7 @@ export class SearchRepository {
       WHERE si.search_vector @@ to_tsquery('arabic', ${expandedQuery})
         AND f.verification_status = 'verified'
         ${scholarFilter}
-      ORDER BY score DESC
+      ORDER BY score DESC, f.id DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
 
@@ -126,7 +135,7 @@ export class SearchRepository {
     const terms = query.split(' ').filter(t => t.length > 1);
     
     if (terms.length === 0) {
-      return { data: [], total: 0 };
+      return { data: [], total: 0, aggregations: { scholars: {} } };
     }
 
     const searchConditions = terms.map(term => ({
@@ -138,6 +147,8 @@ export class SearchRepository {
       ]
     }));
 
+    const limitCandidates = parseInt(process.env.SEARCH_FALLBACK_MAX_CANDIDATES as any, 10) || 500;
+
     try {
       const rawData = await this.prisma.fatwa.findMany({
         where: {
@@ -148,14 +159,15 @@ export class SearchRepository {
           ]
         },
         include: { scholar: true, category: true, source: true },
-        take: 50 
+        take: limitCandidates 
       });
 
       const scoredData = rawData.map(fatwa => {
       let score = 0;
       const lowerQuery = query.toLowerCase();
 
-      if (fatwa.question?.toLowerCase().includes(lowerQuery)) score += 100;
+      if (fatwa.question?.toLowerCase().includes(lowerQuery)) score += 5000;
+      if (fatwa.answer?.toLowerCase().includes(lowerQuery)) score += 500;
       if (fatwa.scholar?.name?.toLowerCase().includes(lowerQuery)) score += 40;
       if (fatwa.category?.name?.toLowerCase().includes(lowerQuery)) score += 50;
 
