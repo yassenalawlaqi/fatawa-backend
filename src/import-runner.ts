@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './src/app.module';
-import { ImporterService } from './src/modules/importer/importer.service';
-import { PrismaService } from './src/modules/prisma/prisma.service';
+import { AppModule } from './app.module';
+import { ImporterService } from './modules/importer/importer.service';
+import { PrismaService } from './modules/prisma/prisma.service';
 
 async function run() {
   console.log('=================================');
