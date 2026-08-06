@@ -27,7 +27,7 @@ async function run() {
   // binbaz-official, uthaymeen-official, fawzan-official, committee-official are correct based on typical naming.
   // Wait, let's look at the source slugs in the plugins.
   
-  const results = [];
+  const results: any[] = [];
   const startTime = Date.now();
 
   for (const src of sources) {
