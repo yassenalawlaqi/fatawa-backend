@@ -30,7 +30,7 @@ export class UthaymeenImporter extends BaseImporterService {
         const html = await this.extractor.extractContent([
           {
             type: 'html',
-            url: `${this.officialUrl}/fatawa?page=${currentPage}`,
+            url: `${this.officialUrl}/content/Menu/ftawa?page=${currentPage}`,
             extractFn: async (data) => data,
           }
         ]);

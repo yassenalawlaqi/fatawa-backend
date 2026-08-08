@@ -18,6 +18,14 @@ async function run() {
   const importerService = app.get(ImporterService);
   const prisma = app.get(PrismaService);
 
+  if (process.env.RESET_CHECKPOINTS === 'true') {
+    console.log('RESETTING ALL IMPORT CHECKPOINTS...');
+    await prisma.systemMetadata.deleteMany({
+      where: { key: { startsWith: 'import_checkpoint_' } }
+    });
+    console.log('Checkpoints reset successfully.');
+  }
+
   const sources = [
     { slug: 'binbaz-official', name: 'ابن باز' },
     { slug: 'uthaymeen-official', name: 'ابن عثيمين' },
