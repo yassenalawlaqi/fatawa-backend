@@ -30,7 +30,7 @@ export class BinBazImporter extends BaseImporterService {
         const html = await this.extractor.extractContent([
           {
             type: 'html',
-            url: `${this.officialUrl}/fatwas/kind/1?page=${currentPage}`,
+            url: `${this.officialUrl}/fatwas?page=${currentPage}`,
             extractFn: async (data) => data,
           }
         ]);
