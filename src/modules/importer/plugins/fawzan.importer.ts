@@ -8,7 +8,7 @@ import { KeywordExtractorService } from '../../search/keyword-extractor.service'
 export class FawzanImporter extends BaseImporterService {
   readonly sourceName = 'الموقع الرسمي للشيخ صالح الفوزان';
   readonly sourceSlug = 'fawzan-official';
-  readonly officialUrl = 'https://alfawzan.af.org.sa';
+  readonly officialUrl = 'https://alfawzan.live';
 
   constructor(
     protected readonly prisma: PrismaService,
@@ -21,7 +21,7 @@ export class FawzanImporter extends BaseImporterService {
   async fetchRawItems(): Promise<any[]> {
     this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
     const allLinks: Set<string> = new Set();
-    let currentPage = 0; // Drupal often starts at 0
+    let currentPage = 1; 
     let hasMorePages = true;
 
     while (hasMorePages) {
@@ -30,7 +30,7 @@ export class FawzanImporter extends BaseImporterService {
         const html = await this.extractor.extractContent([
           {
             type: 'html',
-            url: `${this.officialUrl}/ar/fatwas?page=${currentPage}`,
+            url: `${this.officialUrl}/fatwas?page=${currentPage}`,
             extractFn: async (data) => data,
           }
         ]);
@@ -41,7 +41,7 @@ export class FawzanImporter extends BaseImporterService {
         const pageLinks: string[] = [];
         $('a').each((_, el) => {
           const href = $(el).attr('href');
-          if (href && href.includes('/node/')) {
+          if (href && (href.includes('/fatwas/') || href.includes('/fatwa/')) && !href.includes('page=')) {
             pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
           }
         });
@@ -71,7 +71,8 @@ export class FawzanImporter extends BaseImporterService {
     }
 
     this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    return Array.from(allLinks).map(url => ({ url }));
+    // Reverse array to ensure older items are processed first for proper Checkpoint (startIndex) handling
+    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {

@@ -8,7 +8,7 @@ import { KeywordExtractorService } from '../../search/keyword-extractor.service'
 export class UthaymeenImporter extends BaseImporterService {
   readonly sourceName = 'موقع الشيخ محمد بن صالح العثيمين';
   readonly sourceSlug = 'uthaymeen-official';
-  readonly officialUrl = 'https://binothaimeen.net';
+  readonly officialUrl = 'https://old.binothaimeen.net';
 
   constructor(
     protected readonly prisma: PrismaService,
@@ -30,7 +30,7 @@ export class UthaymeenImporter extends BaseImporterService {
         const html = await this.extractor.extractContent([
           {
             type: 'html',
-            url: `${this.officialUrl}/content/Menu/fatwa?page=${currentPage}`,
+            url: `${this.officialUrl}/fatawa?page=${currentPage}`,
             extractFn: async (data) => data,
           }
         ]);
@@ -41,7 +41,7 @@ export class UthaymeenImporter extends BaseImporterService {
         const pageLinks: string[] = [];
         $('a').each((_, el) => {
           const href = $(el).attr('href');
-          if (href && href.includes('/content/')) {
+          if (href && (href.includes('/content/') || href.includes('fatwa'))) {
             pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
           }
         });
@@ -71,7 +71,8 @@ export class UthaymeenImporter extends BaseImporterService {
     }
 
     this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    return Array.from(allLinks).map(url => ({ url }));
+    // Reverse array to ensure older items are processed first for proper Checkpoint (startIndex) handling
+    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {

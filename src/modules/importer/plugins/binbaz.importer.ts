@@ -39,9 +39,10 @@ export class BinBazImporter extends BaseImporterService {
         const $ = cheerio.load(html);
         
         const pageLinks: string[] = [];
-        $('article.fatwa a').each((_, el) => {
+        $('a').each((_, el) => {
           const href = $(el).attr('href');
-          if (href && href.includes('/fatwas/')) {
+          // Match actual fatwa detail pages, not categories
+          if (href && href.match(/\/fatwas\/\d+/)) {
             pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
           }
         });
@@ -63,7 +64,8 @@ export class BinBazImporter extends BaseImporterService {
     this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
     
     // Return objects with just the URL, to save memory. HTML will be fetched per item.
-    return Array.from(allLinks).map(url => ({ url }));
+    // We reverse the array so the oldest fatwas are first, ensuring the Checkpoint logic (startIndex) correctly skips already-imported older fatwas.
+    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {

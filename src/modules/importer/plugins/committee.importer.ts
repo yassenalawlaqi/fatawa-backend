@@ -23,17 +23,28 @@ export class PermanentCommitteeImporter extends BaseImporterService {
     const allLinks: Set<string> = new Set();
     let currentPage = 1; 
     let hasMorePages = true;
+    const axios = require('axios');
+    const https = require('https');
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+      'Referer': this.officialUrl,
+      'Connection': 'keep-alive',
+      'Cookie': 'ASP.NET_SessionId=abcdef1234567890abcdef12;',
+      'Upgrade-Insecure-Requests': '1'
+    };
 
     while (hasMorePages) {
       this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
       try {
-        const html = await this.extractor.extractContent([
-          {
-            type: 'html',
-            url: `${this.officialUrl}/Ar/IftaPages/default.aspx?page=${currentPage}`,
-            extractFn: async (data) => data,
-          }
-        ]);
+        const response = await axios.get(`${this.officialUrl}/Ar/IftaPages/default.aspx?page=${currentPage}`, {
+          headers,
+          httpsAgent,
+          timeout: 15000
+        });
+        const html = response.data;
 
         const cheerio = require('cheerio');
         const $ = cheerio.load(html);
@@ -71,17 +82,30 @@ export class PermanentCommitteeImporter extends BaseImporterService {
     }
 
     this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    return Array.from(allLinks).map(url => ({ url }));
+    // Reverse array to ensure older items are processed first for proper Checkpoint (startIndex) handling
+    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {
-    const html = await this.extractor.extractContent([
-      {
-        type: 'html',
-        url: rawItem.url,
-        extractFn: async (d) => d
-      }
-    ]);
+    const axios = require('axios');
+    const https = require('https');
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+      'Referer': this.officialUrl,
+      'Connection': 'keep-alive',
+      'Cookie': 'ASP.NET_SessionId=abcdef1234567890abcdef12;',
+      'Upgrade-Insecure-Requests': '1'
+    };
+
+    const response = await axios.get(rawItem.url, {
+      headers,
+      httpsAgent,
+      timeout: 15000
+    });
+    const html = response.data;
 
     const extracted = this.extractor.extractHtml(html, '.fatwa-title, h1, h2', '.fatwa-body, .content');
     
