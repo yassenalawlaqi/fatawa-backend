@@ -18,11 +18,12 @@ export class UthaymeenImporter extends BaseImporterService {
     super(prisma, keywordExtractor);
   }
 
-  async fetchRawItems(): Promise<any[]> {
+  async *fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown> {
     this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
-    const allLinks: Set<string> = new Set();
     let currentPage = 1;
     let hasMorePages = true;
+    let currentItemIndex = 0;
+    const seenLinks = new Set<string>();
 
     while (hasMorePages) {
       this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
@@ -42,37 +43,31 @@ export class UthaymeenImporter extends BaseImporterService {
         $('a').each((_, el) => {
           const href = $(el).attr('href');
           if (href && (href.includes('/content/') || href.includes('fatwa'))) {
-            pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+            const fullUrl = href.startsWith('http') ? href : `${this.officialUrl}${href}`;
+            if (!seenLinks.has(fullUrl)) {
+              seenLinks.add(fullUrl);
+              pageLinks.push(fullUrl);
+            }
           }
         });
 
         if (pageLinks.length === 0) {
           hasMorePages = false;
         } else {
-          let addedNew = false;
-          pageLinks.forEach(link => {
-            if (!allLinks.has(link)) {
-              allLinks.add(link);
-              addedNew = true;
+          for (const link of pageLinks) {
+            if (currentItemIndex >= startIndex) {
+              yield { url: link };
             }
-          });
-          
-          if (!addedNew) {
-            hasMorePages = false;
-          } else {
-            currentPage++;
-            await new Promise(res => setTimeout(res, 500));
+            currentItemIndex++;
           }
+          currentPage++;
+          await new Promise(res => setTimeout(res, 500));
         }
       } catch (err) {
         this.logger.warn(`Failed to fetch page ${currentPage}: ${err.message}`);
         hasMorePages = false;
       }
     }
-
-    this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    // Reverse array to ensure older items are processed first for proper Checkpoint (startIndex) handling
-    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {

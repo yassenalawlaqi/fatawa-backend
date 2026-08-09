@@ -19,8 +19,9 @@ export abstract class BaseImporterService implements IImporter {
 
   /**
    * Defines the strategy for fetching raw items (URLs, RSS items, JSON objects)
+   * Uses an AsyncGenerator to allow stopping early when IMPORT_LIMIT is reached.
    */
-  abstract fetchRawItems(startPage?: number): Promise<any[]>;
+  abstract fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown>;
 
   /**
    * Defines the strategy for extracting data from a raw item
@@ -73,21 +74,21 @@ export abstract class BaseImporterService implements IImporter {
         this.logger.log(`Resuming ${this.sourceName} from checkpoint index: ${startIndex}`);
       }
 
-      const allRawItems = await this.fetchRawItems();
-      
       const importLimit = parseInt(process.env.IMPORT_LIMIT || '0', 10);
-      let rawItems = allRawItems.slice(startIndex);
-      
       if (importLimit > 0) {
-        rawItems = rawItems.slice(0, importLimit);
-        this.logger.log(`IMPORT_LIMIT is set to ${importLimit}. Processing ${rawItems.length} items from index ${startIndex}.`);
+        this.logger.log(`IMPORT_LIMIT is set to ${importLimit}. Processing up to ${importLimit} items from index ${startIndex}.`);
       } else {
-        this.logger.log(`Found ${rawItems.length} remaining items to process from ${this.sourceName} (Total: ${allRawItems.length}).`);
+        this.logger.log(`Processing all items from ${this.sourceName} starting from index ${startIndex}.`);
       }
 
       let processedCount = 0;
+      const rawItemsGenerator = this.fetchRawItems(startIndex);
 
-      for (const item of rawItems) {
+      for await (const item of rawItemsGenerator) {
+        if (importLimit > 0 && processedCount >= importLimit) {
+          this.logger.log(`Reached IMPORT_LIMIT of ${importLimit}. Stopping extraction early.`);
+          break; // This breaks the loop and signals the generator to stop fetching new pages!
+        }
         try {
           // Rate Limiting (Delay 500 - 1500ms)
           const delayMs = Math.floor(Math.random() * 1000) + 500;
@@ -251,9 +252,9 @@ export abstract class BaseImporterService implements IImporter {
           metrics.failed++;
         }
 
-        // Save Progress / Checkpoint every 100 items or at the end
+        // Save Progress / Checkpoint every 100 items
         processedCount++;
-        if (processedCount % 100 === 0 || processedCount === rawItems.length) {
+        if (processedCount % 100 === 0) {
           const currentIndex = startIndex + processedCount;
           await this.prisma.systemMetadata.upsert({
             where: { key: checkpointKey },
@@ -262,12 +263,20 @@ export abstract class BaseImporterService implements IImporter {
           });
           
           // Print Live Progress
-          console.log(`\n[PROGRESS] ${this.sourceName}: ${currentIndex} / ${allRawItems.length} processed.`);
+          console.log(`\n[PROGRESS] ${this.sourceName}: ${currentIndex} processed so far.`);
         }
       }
 
+      // Save final checkpoint
+      const finalIndex = startIndex + processedCount;
+      await this.prisma.systemMetadata.upsert({
+        where: { key: checkpointKey },
+        update: { value: finalIndex.toString() },
+        create: { key: checkpointKey, value: finalIndex.toString() }
+      });
+
       const executionTime = Date.now() - startTime;
-      const finalStatus = metrics.failed === rawItems.length && rawItems.length > 0 ? 'failed' : 'success';
+      const finalStatus = metrics.failed === processedCount && processedCount > 0 ? 'failed' : 'success';
       
       this.logger.log(`[END] Import complete for ${this.sourceName}. Time: ${executionTime}ms. Imported: ${metrics.imported}, Updated: ${metrics.updated}, Skipped: ${metrics.skipped}, Failed: ${metrics.failed}, Duplicated: ${metrics.duplicated}`);
 

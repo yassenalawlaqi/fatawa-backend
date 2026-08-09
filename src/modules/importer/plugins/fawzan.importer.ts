@@ -28,11 +28,13 @@ export class FawzanImporter extends BaseImporterService {
     super(prisma, keywordExtractor);
   }
 
-  async fetchRawItems(): Promise<any[]> {
+  async *fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown> {
     this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
-    const allLinks: Set<string> = new Set();
     let currentPage = 0;
     let hasMorePages = true;
+    let currentItemIndex = 0;
+    const seenLinks = new Set<string>();
+    
     const axios = require('axios');
     const https = require('https');
     const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -52,35 +54,31 @@ export class FawzanImporter extends BaseImporterService {
         $('a').each((_, el) => {
           const href = $(el).attr('href');
           if (href && href.match(/\/ar\/fatwas\/\d+/) && !href.includes('page=')) {
-            pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+            const fullUrl = href.startsWith('http') ? href : `${this.officialUrl}${href}`;
+            if (!seenLinks.has(fullUrl)) {
+              seenLinks.add(fullUrl);
+              pageLinks.push(fullUrl);
+            }
           }
         });
 
         if (pageLinks.length === 0) {
           hasMorePages = false;
         } else {
-          let addedNew = false;
-          pageLinks.forEach(link => {
-            if (!allLinks.has(link)) {
-              allLinks.add(link);
-              addedNew = true;
+          for (const link of pageLinks) {
+            if (currentItemIndex >= startIndex) {
+              yield { url: link };
             }
-          });
-          if (!addedNew) {
-            hasMorePages = false;
-          } else {
-            currentPage++;
-            await new Promise(res => setTimeout(res, 800));
+            currentItemIndex++;
           }
+          currentPage++;
+          await new Promise(res => setTimeout(res, 800));
         }
       } catch (err) {
         this.logger.warn(`Failed to fetch page ${currentPage}: ${err.message}`);
         hasMorePages = false;
       }
     }
-
-    this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {
