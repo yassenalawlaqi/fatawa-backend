@@ -8,7 +8,17 @@ import { KeywordExtractorService } from '../../search/keyword-extractor.service'
 export class FawzanImporter extends BaseImporterService {
   readonly sourceName = 'الموقع الرسمي للشيخ صالح الفوزان';
   readonly sourceSlug = 'fawzan-official';
-  readonly officialUrl = 'https://alfawzan.live';
+  readonly officialUrl = 'https://alfawzan.af.org.sa';
+
+  private readonly requestHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+    'Accept-Encoding': 'gzip, deflate',
+    'Referer': 'https://alfawzan.af.org.sa/',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+  };
 
   constructor(
     protected readonly prisma: PrismaService,
@@ -21,27 +31,27 @@ export class FawzanImporter extends BaseImporterService {
   async fetchRawItems(): Promise<any[]> {
     this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
     const allLinks: Set<string> = new Set();
-    let currentPage = 1; 
+    let currentPage = 0;
     let hasMorePages = true;
+    const axios = require('axios');
+    const https = require('https');
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    const cheerio = require('cheerio');
 
     while (hasMorePages) {
       this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
       try {
-        const html = await this.extractor.extractContent([
-          {
-            type: 'html',
-            url: `${this.officialUrl}/fatwas?page=${currentPage}`,
-            extractFn: async (data) => data,
-          }
-        ]);
+        const response = await axios.get(`${this.officialUrl}/ar/fatwas?page=${currentPage}`, {
+          headers: this.requestHeaders,
+          httpsAgent,
+          timeout: 15000,
+        });
 
-        const cheerio = require('cheerio');
-        const $ = cheerio.load(html);
-        
+        const $ = cheerio.load(response.data);
         const pageLinks: string[] = [];
         $('a').each((_, el) => {
           const href = $(el).attr('href');
-          if (href && (href.includes('/fatwas/') || href.includes('/fatwa/')) && !href.includes('page=')) {
+          if (href && href.match(/\/ar\/fatwas\/\d+/) && !href.includes('page=')) {
             pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
           }
         });
@@ -56,12 +66,11 @@ export class FawzanImporter extends BaseImporterService {
               addedNew = true;
             }
           });
-          
           if (!addedNew) {
-            hasMorePages = false; // Stop if we are just seeing the same links again
+            hasMorePages = false;
           } else {
             currentPage++;
-            await new Promise(res => setTimeout(res, 500));
+            await new Promise(res => setTimeout(res, 800));
           }
         }
       } catch (err) {
@@ -71,26 +80,43 @@ export class FawzanImporter extends BaseImporterService {
     }
 
     this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-    // Reverse array to ensure older items are processed first for proper Checkpoint (startIndex) handling
     return Array.from(allLinks).map(url => ({ url })).reverse();
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {
-    const html = await this.extractor.extractContent([
-      {
-        type: 'html',
-        url: rawItem.url,
-        extractFn: async (d) => d
-      }
-    ]);
+    const axios = require('axios');
+    const https = require('https');
+    const cheerio = require('cheerio');
+    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-    const extracted = this.extractor.extractHtml(html, 'h1.page-header', '.field-name-body, .content');
-    
-    if (!extracted.question || !extracted.answer) {
-      throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
+    const response = await axios.get(rawItem.url, {
+      headers: this.requestHeaders,
+      httpsAgent,
+      timeout: 15000,
+    });
+
+    const $ = cheerio.load(response.data);
+
+    const questionSelectors = ['h1.page-header', '.field-name-title h2', 'h1', '.view-header h2'];
+    const answerSelectors = ['.field-name-body .field-item', '.field-name-body', '.content', 'article', '.node-body'];
+
+    let question = '';
+    for (const sel of questionSelectors) {
+      const text = $(sel).first().text().trim();
+      if (text && text.length > 5) { question = text; break; }
     }
 
-    const attachments = this.extractor.extractAttachments(html, this.officialUrl);
+    let answer = '';
+    for (const sel of answerSelectors) {
+      const text = $(sel).text().trim();
+      if (text && text.length > 20) { answer = text; break; }
+    }
+
+    if (!question) question = $('title').text().trim();
+    if (!question || question.length < 3) throw new Error(`No question found at ${rawItem.url}`);
+    if (!answer || answer.length < 10) throw new Error(`No answer found at ${rawItem.url}`);
+
+    const attachments = this.extractor.extractAttachments(response.data, this.officialUrl);
 
     const urlParts = rawItem.url.split('/');
     const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
@@ -101,10 +127,8 @@ export class FawzanImporter extends BaseImporterService {
       create: { name: 'صالح بن فوزان الفوزان', slug: 'al-fawzan' }
     });
 
-    const cheerio = require('cheerio');
-    const $ = cheerio.load(html);
     const categoryName = $('.field-name-field-category a').first().text().trim() || 'فتاوى عامة';
-    const categorySlug = categoryName === 'فتاوى عامة' ? 'general' : categoryName.replace(/\\s+/g, '-');
+    const categorySlug = categoryName === 'فتاوى عامة' ? 'general' : categoryName.replace(/\s+/g, '-').substring(0, 50);
     const category = await this.prisma.category.upsert({
       where: { slug: categorySlug },
       update: {},
@@ -113,8 +137,8 @@ export class FawzanImporter extends BaseImporterService {
 
     return {
       slug: `fawzan-${fatwaId}`,
-      question: extracted.question,
-      answer: extracted.answer,
+      question: question.substring(0, 1000),
+      answer: answer.substring(0, 50000),
       url: rawItem.url,
       scholarId: scholar.id,
       categoryId: category.id,

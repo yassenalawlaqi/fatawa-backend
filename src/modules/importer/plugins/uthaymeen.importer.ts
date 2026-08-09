@@ -76,6 +76,7 @@ export class UthaymeenImporter extends BaseImporterService {
   }
 
   async extractFatwaData(rawItem: { url: string }): Promise<FatwaData> {
+    const cheerio = require('cheerio');
     const html = await this.extractor.extractContent([
       {
         type: 'html',
@@ -84,10 +85,60 @@ export class UthaymeenImporter extends BaseImporterService {
       }
     ]);
 
-    const extracted = this.extractor.extractHtml(html, 'h1, h2.title', '.content, .article-text, article');
-    
-    if (!extracted.question || !extracted.answer) {
-      throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
+    const $ = cheerio.load(html);
+
+    // old.binothaimeen.net Yii framework selectors (try multiple fallbacks)
+    const questionSelectors = [
+      '.portlet-title h1',
+      '.portlet-title',
+      '.question-title',
+      '.fatwa-question',
+      'h1.title',
+      'h1',
+      '.view-item h1',
+      '.item-title',
+    ];
+
+    const answerSelectors = [
+      '.portlet-content .view',
+      '.portlet-content p',
+      '.fatwa-answer',
+      '.answer-text',
+      '.view-item .content',
+      '.portlet-content',
+      '#content',
+      'article',
+      '.content',
+    ];
+
+    let question = '';
+    for (const sel of questionSelectors) {
+      const text = $(sel).first().text().trim();
+      if (text && text.length > 5) {
+        question = text;
+        break;
+      }
+    }
+
+    let answer = '';
+    for (const sel of answerSelectors) {
+      const text = $(sel).text().trim();
+      if (text && text.length > 20) {
+        answer = text;
+        break;
+      }
+    }
+
+    // If still no question, use the page title
+    if (!question) {
+      question = $('title').text().trim().replace(' - موقع الشيخ ابن عثيمين', '').trim();
+    }
+
+    if (!question || question.length < 3) {
+      throw new Error(`No question found at ${rawItem.url}`);
+    }
+    if (!answer || answer.length < 10) {
+      throw new Error(`No answer found at ${rawItem.url}`);
     }
 
     const attachments = this.extractor.extractAttachments(html, this.officialUrl);
@@ -109,8 +160,8 @@ export class UthaymeenImporter extends BaseImporterService {
 
     return {
       slug: `uthaymeen-${fatwaId}`,
-      question: extracted.question,
-      answer: extracted.answer,
+      question: question.substring(0, 1000),
+      answer: answer.substring(0, 50000),
       url: rawItem.url,
       scholarId: scholar.id,
       categoryId: category.id,
