@@ -7,6 +7,14 @@ export declare class SearchService implements ISearchProvider {
     private cacheManager;
     private readonly logger;
     constructor(searchRepository: SearchRepository, cacheManager: Cache);
+    private normalizeText;
+    private removeStopWords;
+    private extractSearchSubject;
+    normalizeIntentQuery(rawQuery: string): {
+        normalized: string;
+        intentSubject: string;
+    };
+    private getSemanticExpansions;
     search(queryDto: SearchQueryDto): Promise<{
         success: boolean;
         message?: string;
@@ -17,10 +25,13 @@ export declare class SearchService implements ISearchProvider {
             total: number;
             totalPages: number;
         };
+        aggregations?: any;
         meta?: any;
     }>;
-    autocomplete(q: string): Promise<{}>;
-    getTrendingSearches(): Promise<{}>;
+    autocomplete(q: string, scholar?: string): Promise<{
+        term: string;
+    }[]>;
+    getTrendingSearches(): Promise<string[]>;
     getAllSynonyms(): Promise<{
         id: string;
         word: string;

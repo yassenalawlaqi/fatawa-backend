@@ -4,28 +4,28 @@ export declare class FatawaController {
     constructor(fatawaService: FatawaService);
     getFatawa(scholarSlug: string, scholarId: string, page?: string, limit?: string): Promise<{
         data: ({
-            scholar: {
-                id: string;
-                slug: string;
-                name: string;
-                description: string | null;
-                createdAt: Date;
-            };
             category: {
                 id: string;
-                slug: string;
                 name: string;
-                createdAt: Date;
+                slug: string;
                 parentId: string | null;
+                createdAt: Date;
             };
             source: {
                 id: string;
-                slug: string;
                 name: string;
+                slug: string;
                 createdAt: Date;
                 type: string;
                 officialUrl: string | null;
                 licenseNotes: string | null;
+            };
+            scholar: {
+                id: string;
+                name: string;
+                slug: string;
+                createdAt: Date;
+                description: string | null;
             };
         } & {
             id: string;
@@ -57,35 +57,35 @@ export declare class FatawaController {
         };
     }>;
     getFatwa(slug: string): Promise<{
-        scholar: {
-            id: string;
-            slug: string;
-            name: string;
-            description: string | null;
-            createdAt: Date;
-        };
         category: {
             id: string;
-            slug: string;
             name: string;
-            createdAt: Date;
+            slug: string;
             parentId: string | null;
+            createdAt: Date;
         };
         source: {
             id: string;
-            slug: string;
             name: string;
+            slug: string;
             createdAt: Date;
             type: string;
             officialUrl: string | null;
             licenseNotes: string | null;
         };
+        scholar: {
+            id: string;
+            name: string;
+            slug: string;
+            createdAt: Date;
+            description: string | null;
+        };
         attachments: {
             id: string;
             createdAt: Date;
             type: string;
-            title: string | null;
             fatwaId: string;
+            title: string | null;
             fileUrl: string;
         }[];
         keywords: ({

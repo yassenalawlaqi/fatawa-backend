@@ -14,6 +14,7 @@ export declare class SearchController {
             total: number;
             totalPages: number;
         };
+        aggregations?: any;
         meta?: any;
     }>;
     searchPost(query: SearchQueryDto): Promise<{
@@ -26,10 +27,13 @@ export declare class SearchController {
             total: number;
             totalPages: number;
         };
+        aggregations?: any;
         meta?: any;
     }>;
-    autocomplete(q: string): Promise<{}>;
-    trending(): Promise<{}>;
+    autocomplete(q: string, scholar?: string): Promise<{
+        term: string;
+    }[]>;
+    trending(): Promise<string[]>;
     getSynonyms(): Promise<{
         success: boolean;
         data: {

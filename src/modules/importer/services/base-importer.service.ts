@@ -278,7 +278,18 @@ export abstract class BaseImporterService implements IImporter {
       const executionTime = Date.now() - startTime;
       const finalStatus = metrics.failed === processedCount && processedCount > 0 ? 'failed' : 'success';
       
-      this.logger.log(`[END] Import complete for ${this.sourceName}. Time: ${executionTime}ms. Imported: ${metrics.imported}, Updated: ${metrics.updated}, Skipped: ${metrics.skipped}, Failed: ${metrics.failed}, Duplicated: ${metrics.duplicated}`);
+      this.logger.log(`
+=========================================
+[END] Import complete for ${this.sourceName}
+=========================================
+Discovered (Processed from Generator): ${processedCount}
+Imported (New): ${metrics.imported}
+Updated: ${metrics.updated}
+Duplicates: ${metrics.duplicated}
+Skipped: ${metrics.skipped}
+Failed: ${metrics.failed}
+Time: ${executionTime}ms
+=========================================`);
 
       // Phase 2: Smart Sync - Update Search Index in bulk for this source
       if (metrics.imported > 0 || metrics.updated > 0) {

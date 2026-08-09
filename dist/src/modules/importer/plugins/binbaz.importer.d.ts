@@ -11,7 +11,7 @@ export declare class BinBazImporter extends BaseImporterService {
     readonly sourceSlug = "binbaz-official";
     readonly officialUrl = "https://binbaz.org.sa";
     constructor(prisma: PrismaService, extractor: ContentExtractorService, keywordExtractor: KeywordExtractorService);
-    fetchRawItems(): Promise<any[]>;
+    fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown>;
     extractFatwaData(rawItem: {
         url: string;
     }): Promise<FatwaData>;

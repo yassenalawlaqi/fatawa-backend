@@ -11,7 +11,7 @@ export declare class PermanentCommitteeImporter extends BaseImporterService {
     readonly sourceSlug = "committee-official";
     readonly officialUrl = "https://alifta.gov.sa";
     constructor(prisma: PrismaService, extractor: ContentExtractorService, keywordExtractor: KeywordExtractorService);
-    fetchRawItems(): Promise<any[]>;
+    fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown>;
     extractFatwaData(rawItem: {
         url: string;
     }): Promise<FatwaData>;

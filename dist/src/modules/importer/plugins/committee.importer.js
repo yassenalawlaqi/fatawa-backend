@@ -28,48 +28,58 @@ let PermanentCommitteeImporter = class PermanentCommitteeImporter extends base_i
         this.extractor = extractor;
         this.keywordExtractor = keywordExtractor;
     }
-    async fetchRawItems() {
+    async *fetchRawItems(startIndex) {
         this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
-        const allLinks = new Set();
         let currentPage = 1;
         let hasMorePages = true;
+        let currentItemIndex = 0;
+        const seenLinks = new Set();
+        const axios = require('axios');
+        const https = require('https');
+        const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+            'Referer': this.officialUrl,
+            'Connection': 'keep-alive',
+            'Cookie': 'ASP.NET_SessionId=abcdef1234567890abcdef12;',
+            'Upgrade-Insecure-Requests': '1'
+        };
         while (hasMorePages) {
             this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
             try {
-                const html = await this.extractor.extractContent([
-                    {
-                        type: 'html',
-                        url: `${this.officialUrl}/Ar/IftaPages/default.aspx?page=${currentPage}`,
-                        extractFn: async (data) => data,
-                    }
-                ]);
+                const response = await axios.get(`${this.officialUrl}/Ar/IftaPages/default.aspx?page=${currentPage}`, {
+                    headers,
+                    httpsAgent,
+                    timeout: 15000
+                });
+                const html = response.data;
                 const cheerio = require('cheerio');
                 const $ = cheerio.load(html);
                 const pageLinks = [];
                 $('a').each((_, el) => {
                     const href = $(el).attr('href');
                     if (href && href.includes('Fatwa')) {
-                        pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+                        const fullUrl = href.startsWith('http') ? href : `${this.officialUrl}${href}`;
+                        if (!seenLinks.has(fullUrl)) {
+                            seenLinks.add(fullUrl);
+                            pageLinks.push(fullUrl);
+                        }
                     }
                 });
                 if (pageLinks.length === 0) {
                     hasMorePages = false;
                 }
                 else {
-                    let addedNew = false;
-                    pageLinks.forEach(link => {
-                        if (!allLinks.has(link)) {
-                            allLinks.add(link);
-                            addedNew = true;
+                    for (const link of pageLinks) {
+                        if (currentItemIndex >= startIndex) {
+                            yield { url: link };
                         }
-                    });
-                    if (!addedNew) {
-                        hasMorePages = false;
+                        currentItemIndex++;
                     }
-                    else {
-                        currentPage++;
-                        await new Promise(res => setTimeout(res, 500));
-                    }
+                    currentPage++;
+                    await new Promise(res => setTimeout(res, 500));
                 }
             }
             catch (err) {
@@ -77,17 +87,26 @@ let PermanentCommitteeImporter = class PermanentCommitteeImporter extends base_i
                 hasMorePages = false;
             }
         }
-        this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-        return Array.from(allLinks).map(url => ({ url }));
     }
     async extractFatwaData(rawItem) {
-        const html = await this.extractor.extractContent([
-            {
-                type: 'html',
-                url: rawItem.url,
-                extractFn: async (d) => d
-            }
-        ]);
+        const axios = require('axios');
+        const https = require('https');
+        const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ar,en-US;q=0.7,en;q=0.3',
+            'Referer': this.officialUrl,
+            'Connection': 'keep-alive',
+            'Cookie': 'ASP.NET_SessionId=abcdef1234567890abcdef12;',
+            'Upgrade-Insecure-Requests': '1'
+        };
+        const response = await axios.get(rawItem.url, {
+            headers,
+            httpsAgent,
+            timeout: 15000
+        });
+        const html = response.data;
         const extracted = this.extractor.extractHtml(html, '.fatwa-title, h1, h2', '.fatwa-body, .content');
         if (!extracted.question || !extracted.answer) {
             throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);

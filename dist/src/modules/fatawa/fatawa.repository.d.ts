@@ -3,35 +3,35 @@ export declare class FatawaRepository {
     private prisma;
     constructor(prisma: PrismaService);
     findBySlug(slugOrId: string): Promise<({
-        scholar: {
-            id: string;
-            slug: string;
-            name: string;
-            description: string | null;
-            createdAt: Date;
-        };
         category: {
             id: string;
-            slug: string;
             name: string;
-            createdAt: Date;
+            slug: string;
             parentId: string | null;
+            createdAt: Date;
         };
         source: {
             id: string;
-            slug: string;
             name: string;
+            slug: string;
             createdAt: Date;
             type: string;
             officialUrl: string | null;
             licenseNotes: string | null;
         };
+        scholar: {
+            id: string;
+            name: string;
+            slug: string;
+            createdAt: Date;
+            description: string | null;
+        };
         attachments: {
             id: string;
             createdAt: Date;
             type: string;
-            title: string | null;
             fatwaId: string;
+            title: string | null;
             fileUrl: string;
         }[];
         keywords: ({
@@ -69,28 +69,28 @@ export declare class FatawaRepository {
     findRelated(slug: string, limit?: number): Promise<any[]>;
     findByScholar(scholarSlug: string | null, scholarId: string | null, page?: number, limit?: number): Promise<{
         data: ({
-            scholar: {
-                id: string;
-                slug: string;
-                name: string;
-                description: string | null;
-                createdAt: Date;
-            };
             category: {
                 id: string;
-                slug: string;
                 name: string;
-                createdAt: Date;
+                slug: string;
                 parentId: string | null;
+                createdAt: Date;
             };
             source: {
                 id: string;
-                slug: string;
                 name: string;
+                slug: string;
                 createdAt: Date;
                 type: string;
                 officialUrl: string | null;
                 licenseNotes: string | null;
+            };
+            scholar: {
+                id: string;
+                name: string;
+                slug: string;
+                createdAt: Date;
+                description: string | null;
             };
         } & {
             id: string;
@@ -125,10 +125,10 @@ export declare class FatawaRepository {
         };
     } & {
         id: string;
-        slug: string;
         name: string;
-        description: string | null;
+        slug: string;
         createdAt: Date;
+        description: string | null;
     })[]>;
     getCategories(): Promise<any[]>;
 }

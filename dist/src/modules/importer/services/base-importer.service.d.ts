@@ -10,7 +10,7 @@ export declare abstract class BaseImporterService implements IImporter {
     abstract readonly officialUrl: string;
     protected readonly logger: Logger;
     constructor(prisma: PrismaService, keywordExtractor: KeywordExtractorService);
-    abstract fetchRawItems(): Promise<any[]>;
+    abstract fetchRawItems(startIndex: number): AsyncGenerator<any, void, unknown>;
     abstract extractFatwaData(rawItem: any): Promise<FatwaData>;
     protected calculateFingerprint(officialUrl: string, question: string, answer: string): string;
     runImportPipeline(): Promise<ImportResult>;

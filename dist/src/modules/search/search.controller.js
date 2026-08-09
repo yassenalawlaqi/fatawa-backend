@@ -46,8 +46,8 @@ let SearchController = SearchController_1 = class SearchController {
     async searchPost(query) {
         return this.searchService.search(query);
     }
-    async autocomplete(q) {
-        return this.searchService.autocomplete(q);
+    async autocomplete(q, scholar) {
+        return this.searchService.autocomplete(q, scholar);
     }
     async trending() {
         return this.searchService.getTrendingSearches();
@@ -81,8 +81,9 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Autocomplete suggestions' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Successful autocomplete response.' }),
     __param(0, (0, common_1.Query)('q')),
+    __param(1, (0, common_1.Query)('scholar')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], SearchController.prototype, "autocomplete", null);
 __decorate([

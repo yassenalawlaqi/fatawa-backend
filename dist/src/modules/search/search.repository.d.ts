@@ -16,29 +16,32 @@ export declare class SearchRepository {
     private readonly synonymService;
     private readonly logger;
     constructor(prisma: PrismaService, synonymService: SynonymService);
-    search(query: string, page?: number, limit?: number): Promise<{
+    search(query: string, page?: number, limit?: number, scholar?: string, intentSubject?: string, semanticExpansions?: string[]): Promise<{
         data: SearchResult[];
         total: number;
         engine: 'fts' | 'fallback';
+        aggregations?: any;
     }>;
-    searchFTS(query: string, page: number, limit: number): Promise<{
+    searchFTS(query: string, page: number, limit: number, scholar?: string, intentSubject?: string, semanticExpansions?: string[]): Promise<{
         data: SearchResult[];
         total: number;
+        aggregations: any;
     }>;
-    searchFallback(query: string, page: number, limit: number): Promise<{
+    searchFallback(query: string, page: number, limit: number, scholar?: string, intentSubject?: string): Promise<{
         data: SearchResult[];
         total: number;
+        aggregations: any;
     }>;
-    autocomplete(q: string): Promise<{
+    autocomplete(q: string, scholar?: string): Promise<{
         term: string;
     }[]>;
     logSearch(query: string, resultsCount: number, executionMs: number, engine: string): Promise<void>;
     getTrendingSearches(): Promise<string[]>;
-    rebuildSearchIndex(): Promise<void>;
-    rebuildSearchIndexForSource(sourceId: string): Promise<void>;
     getAllSynonyms(): Promise<{
         id: string;
         word: string;
         synonym: string;
     }[]>;
+    rebuildSearchIndex(): Promise<void>;
+    rebuildSearchIndexForSource(sourceId: string): Promise<void>;
 }

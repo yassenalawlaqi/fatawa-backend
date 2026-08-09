@@ -21,25 +21,26 @@ let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.
     keywordExtractor;
     sourceName = 'موقع الشيخ محمد بن صالح العثيمين';
     sourceSlug = 'uthaymeen-official';
-    officialUrl = 'https://binothaimeen.net';
+    officialUrl = 'https://old.binothaimeen.net';
     constructor(prisma, extractor, keywordExtractor) {
         super(prisma, keywordExtractor);
         this.prisma = prisma;
         this.extractor = extractor;
         this.keywordExtractor = keywordExtractor;
     }
-    async fetchRawItems() {
+    async *fetchRawItems(startIndex) {
         this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
-        const allLinks = new Set();
         let currentPage = 1;
         let hasMorePages = true;
+        let currentItemIndex = 0;
+        const seenLinks = new Set();
         while (hasMorePages) {
             this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
             try {
                 const html = await this.extractor.extractContent([
                     {
                         type: 'html',
-                        url: `${this.officialUrl}/content/Menu/fatwa?page=${currentPage}`,
+                        url: `${this.officialUrl}/content/Menu/ftawa?page=${currentPage}`,
                         extractFn: async (data) => data,
                     }
                 ]);
@@ -48,28 +49,26 @@ let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.
                 const pageLinks = [];
                 $('a').each((_, el) => {
                     const href = $(el).attr('href');
-                    if (href && href.includes('/content/')) {
-                        pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+                    if (href && (href.includes('/content/') || href.includes('fatwa'))) {
+                        const fullUrl = href.startsWith('http') ? href : `${this.officialUrl}${href}`;
+                        if (!seenLinks.has(fullUrl)) {
+                            seenLinks.add(fullUrl);
+                            pageLinks.push(fullUrl);
+                        }
                     }
                 });
                 if (pageLinks.length === 0) {
                     hasMorePages = false;
                 }
                 else {
-                    let addedNew = false;
-                    pageLinks.forEach(link => {
-                        if (!allLinks.has(link)) {
-                            allLinks.add(link);
-                            addedNew = true;
+                    for (const link of pageLinks) {
+                        if (currentItemIndex >= startIndex) {
+                            yield { url: link };
                         }
-                    });
-                    if (!addedNew) {
-                        hasMorePages = false;
+                        currentItemIndex++;
                     }
-                    else {
-                        currentPage++;
-                        await new Promise(res => setTimeout(res, 500));
-                    }
+                    currentPage++;
+                    await new Promise(res => setTimeout(res, 500));
                 }
             }
             catch (err) {
@@ -77,10 +76,9 @@ let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.
                 hasMorePages = false;
             }
         }
-        this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-        return Array.from(allLinks).map(url => ({ url }));
     }
     async extractFatwaData(rawItem) {
+        const cheerio = require('cheerio');
         const html = await this.extractor.extractContent([
             {
                 type: 'html',
@@ -88,17 +86,60 @@ let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.
                 extractFn: async (d) => d
             }
         ]);
-        const extracted = this.extractor.extractHtml(html, 'h1, h2.title', '.content, .article-text, article');
-        if (!extracted.question || !extracted.answer) {
-            throw new Error(`Parsing failed for question or answer at ${rawItem.url}`);
+        const $ = cheerio.load(html);
+        const questionSelectors = [
+            '.portlet-title h1',
+            '.portlet-title',
+            '.question-title',
+            '.fatwa-question',
+            'h1.title',
+            'h1',
+            '.view-item h1',
+            '.item-title',
+        ];
+        const answerSelectors = [
+            '.portlet-content .view',
+            '.portlet-content p',
+            '.fatwa-answer',
+            '.answer-text',
+            '.view-item .content',
+            '.portlet-content',
+            '#content',
+            'article',
+            '.content',
+        ];
+        let question = '';
+        for (const sel of questionSelectors) {
+            const text = $(sel).first().text().trim();
+            if (text && text.length > 5) {
+                question = text;
+                break;
+            }
+        }
+        let answer = '';
+        for (const sel of answerSelectors) {
+            const text = $(sel).text().trim();
+            if (text && text.length > 20) {
+                answer = text;
+                break;
+            }
+        }
+        if (!question) {
+            question = $('title').text().trim().replace(' - موقع الشيخ ابن عثيمين', '').trim();
+        }
+        if (!question || question.length < 3) {
+            throw new Error(`No question found at ${rawItem.url}`);
+        }
+        if (!answer || answer.length < 10) {
+            throw new Error(`No answer found at ${rawItem.url}`);
         }
         const attachments = this.extractor.extractAttachments(html, this.officialUrl);
         const urlParts = rawItem.url.split('/');
         const fatwaId = urlParts.find(part => part.trim() !== '' && !isNaN(Number(part))) || Date.now().toString();
         const scholar = await this.prisma.scholar.upsert({
-            where: { slug: 'uthaymeen' },
+            where: { slug: 'ibn-uthaymeen' },
             update: {},
-            create: { name: 'محمد بن صالح العثيمين', slug: 'uthaymeen' }
+            create: { name: 'محمد بن صالح العثيمين', slug: 'ibn-uthaymeen' }
         });
         const category = await this.prisma.category.upsert({
             where: { slug: 'general' },
@@ -107,8 +148,8 @@ let UthaymeenImporter = class UthaymeenImporter extends base_importer_service_1.
         });
         return {
             slug: `uthaymeen-${fatwaId}`,
-            question: extracted.question,
-            answer: extracted.answer,
+            question: question.substring(0, 1000),
+            answer: answer.substring(0, 50000),
             url: rawItem.url,
             scholarId: scholar.id,
             categoryId: category.id,

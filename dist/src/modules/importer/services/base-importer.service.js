@@ -71,11 +71,50 @@ class BaseImporterService {
                     officialUrl: this.officialUrl,
                 },
             });
-            const rawItems = await this.fetchRawItems();
-            this.logger.log(`Found ${rawItems.length} items to process from ${this.sourceName}.`);
-            for (const item of rawItems) {
+            const checkpointKey = `import_checkpoint_${this.sourceSlug}`;
+            let startIndex = 0;
+            const checkpointMeta = await this.prisma.systemMetadata.findUnique({ where: { key: checkpointKey } });
+            if (checkpointMeta && !isNaN(Number(checkpointMeta.value))) {
+                startIndex = Number(checkpointMeta.value);
+                this.logger.log(`Resuming ${this.sourceName} from checkpoint index: ${startIndex}`);
+            }
+            const importLimit = parseInt(process.env.IMPORT_LIMIT || '0', 10);
+            if (importLimit > 0) {
+                this.logger.log(`IMPORT_LIMIT is set to ${importLimit}. Processing up to ${importLimit} items from index ${startIndex}.`);
+            }
+            else {
+                this.logger.log(`Processing all items from ${this.sourceName} starting from index ${startIndex}.`);
+            }
+            let processedCount = 0;
+            const rawItemsGenerator = this.fetchRawItems(startIndex);
+            for await (const item of rawItemsGenerator) {
+                if (importLimit > 0 && processedCount >= importLimit) {
+                    this.logger.log(`Reached IMPORT_LIMIT of ${importLimit}. Stopping extraction early.`);
+                    break;
+                }
                 try {
-                    const extractedData = await this.extractFatwaData(item);
+                    const delayMs = Math.floor(Math.random() * 1000) + 500;
+                    await new Promise(res => setTimeout(res, delayMs));
+                    let extractedData = null;
+                    let retryCount = 0;
+                    let lastError = null;
+                    while (retryCount < 3) {
+                        try {
+                            extractedData = await this.extractFatwaData(item);
+                            break;
+                        }
+                        catch (err) {
+                            lastError = err;
+                            retryCount++;
+                            if (retryCount < 3) {
+                                this.logger.warn(`Retrying extractFatwaData for ${item.url} (Attempt ${retryCount}/3)...`);
+                                await new Promise(res => setTimeout(res, 2000));
+                            }
+                        }
+                    }
+                    if (!extractedData) {
+                        throw lastError || new Error(`Failed to extract data after 3 attempts`);
+                    }
                     extractedData.sourceId = source.id;
                     const validation = fatwa_validator_util_1.FatwaValidator.validate(extractedData);
                     if (!validation.isValid) {
@@ -185,9 +224,25 @@ class BaseImporterService {
                     this.logger.error(`Error processing item in ${this.sourceSlug}`, itemError.stack);
                     metrics.failed++;
                 }
+                processedCount++;
+                if (processedCount % 100 === 0) {
+                    const currentIndex = startIndex + processedCount;
+                    await this.prisma.systemMetadata.upsert({
+                        where: { key: checkpointKey },
+                        update: { value: currentIndex.toString() },
+                        create: { key: checkpointKey, value: currentIndex.toString() }
+                    });
+                    console.log(`\n[PROGRESS] ${this.sourceName}: ${currentIndex} processed so far.`);
+                }
             }
+            const finalIndex = startIndex + processedCount;
+            await this.prisma.systemMetadata.upsert({
+                where: { key: checkpointKey },
+                update: { value: finalIndex.toString() },
+                create: { key: checkpointKey, value: finalIndex.toString() }
+            });
             const executionTime = Date.now() - startTime;
-            const finalStatus = metrics.failed === rawItems.length && rawItems.length > 0 ? 'failed' : 'success';
+            const finalStatus = metrics.failed === processedCount && processedCount > 0 ? 'failed' : 'success';
             this.logger.log(`[END] Import complete for ${this.sourceName}. Time: ${executionTime}ms. Imported: ${metrics.imported}, Updated: ${metrics.updated}, Skipped: ${metrics.skipped}, Failed: ${metrics.failed}, Duplicated: ${metrics.duplicated}`);
             if (metrics.imported > 0 || metrics.updated > 0) {
                 this.logger.log(`Updating Search Index for ${this.sourceName}...`);

@@ -28,35 +28,45 @@ let BinBazImporter = class BinBazImporter extends base_importer_service_1.BaseIm
         this.extractor = extractor;
         this.keywordExtractor = keywordExtractor;
     }
-    async fetchRawItems() {
+    async *fetchRawItems(startIndex) {
         this.logger.log(`Fetching listing pages for ${this.sourceName}...`);
-        const allLinks = new Set();
         let currentPage = 1;
         let hasMorePages = true;
+        let currentItemIndex = 0;
+        const seenLinks = new Set();
         while (hasMorePages) {
             this.logger.log(`Fetching ${this.sourceName} - Page ${currentPage}`);
             try {
                 const html = await this.extractor.extractContent([
                     {
                         type: 'html',
-                        url: `${this.officialUrl}/fatwas/kind/1?page=${currentPage}`,
+                        url: `${this.officialUrl}/fatwas?page=${currentPage}`,
                         extractFn: async (data) => data,
                     }
                 ]);
                 const cheerio = require('cheerio');
                 const $ = cheerio.load(html);
                 const pageLinks = [];
-                $('article.fatwa a').each((_, el) => {
+                $('a').each((_, el) => {
                     const href = $(el).attr('href');
-                    if (href && href.includes('/fatwas/')) {
-                        pageLinks.push(href.startsWith('http') ? href : `${this.officialUrl}${href}`);
+                    if (href && href.match(/\/fatwas\/\d+/)) {
+                        const fullUrl = href.startsWith('http') ? href : `${this.officialUrl}${href}`;
+                        if (!seenLinks.has(fullUrl)) {
+                            seenLinks.add(fullUrl);
+                            pageLinks.push(fullUrl);
+                        }
                     }
                 });
                 if (pageLinks.length === 0) {
                     hasMorePages = false;
                 }
                 else {
-                    pageLinks.forEach(link => allLinks.add(link));
+                    for (const link of pageLinks) {
+                        if (currentItemIndex >= startIndex) {
+                            yield { url: link };
+                        }
+                        currentItemIndex++;
+                    }
                     currentPage++;
                     await new Promise(res => setTimeout(res, 500));
                 }
@@ -66,8 +76,6 @@ let BinBazImporter = class BinBazImporter extends base_importer_service_1.BaseIm
                 hasMorePages = false;
             }
         }
-        this.logger.log(`Found a total of ${allLinks.size} fatwa URLs from ${this.sourceName}.`);
-        return Array.from(allLinks).map(url => ({ url }));
     }
     async extractFatwaData(rawItem) {
         const html = await this.extractor.extractContent([
